@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 240">
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0L6 3L0 6" fill="none" stroke="#202124" stroke-width="1.5"/></marker></defs>
+<g stroke="#202124" stroke-width="2" font-family="Arial,sans-serif" text-anchor="middle" fill="#202124">
+<rect x="5" y="90" width="125" height="90" rx="22" fill="#fff"/><text x="67" y="128" stroke="none" font-size="22">CLI / REST</text><text x="67" y="156" stroke="none" font-size="17">instruction</text>
+<rect x="170" y="90" width="185" height="90" rx="22" fill="#c4edf4"/><text x="262" y="128" stroke="none" font-size="22">Go application</text><text x="262" y="156" stroke="none" font-size="17">validation / approval</text>
+<rect x="400" y="90" width="245" height="90" rx="22" fill="#ffe8a1"/><text x="522" y="125" stroke="none" font-size="22">Temporal + ADK</text><text x="522" y="155" stroke="none" font-size="17">agent → approved payment</text>
+<rect x="690" y="90" width="190" height="90" rx="22" fill="#ffd5e7"/><text x="785" y="125" stroke="none" font-size="22">Payment service</text><text x="785" y="155" stroke="none" font-size="17">simulation / idempotency</text>
+<rect x="925" y="90" width="165" height="90" rx="22" fill="#fff"/><text x="1007" y="128" stroke="none" font-size="22">PostgreSQL</text><text x="1007" y="156" stroke="none" font-size="17">payment facts</text>
+<rect x="420" y="5" width="205" height="50" rx="22" fill="#fff"/><text x="522" y="37" stroke="none" font-size="22">Gemini Activity</text>
+<path d="M130 135H167M355 135H397M645 135H687M880 135H922M522 90V58" marker-end="url(#arrow)" fill="none"/>
+</g></svg>

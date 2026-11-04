@@ -1,0 +1,134 @@
+# Setup before the workshop
+
+Use Linux/WSL, Bash, Go **1.27.3**, PostgreSQL **17** binaries, Temporal CLI, Python 3, and Node/npm for the slides. The application uses Go `net/http`, `http.ServeMux`, `pgx/v5`/`pgxpool`, parameterized SQL, embedded versioned SQL migrations, and `log/slog`. There is no ORM or application authentication layer. Services bind to localhost and use one fixed simulated NGN account.
+
+The learner contract: **extend a working Go payment agent**, implement one tool, and explore recovery. Listing/search and payment-service persistence are supplied. All accounts and money are simulated.
+
+## 1. Select the environment and download dependencies
+
+From the repository root:
+
+```bash
+export WORKSHOP_INSTANCE=participant  # presenter for the opening/recovery demos
+source scripts/env.sh
+go version                         # expected: go1.27.3
+go mod download
+make build
+```
+
+Go's automatic toolchain selection downloads 1.27.3 if needed. This machine already has it cached. Do this before the venue. Set `PG_BIN` if PostgreSQL 17 binaries are somewhere other than `/usr/lib/postgresql/17/bin`.
+
+## 2. Prepare PostgreSQL
+
+```bash
+make setup
+```
+
+This starts a **separate, user-owned local cluster on port 55432**, creates only `devfest26_presenter` and `devfest26_participant`, and migrates/seeds the selected database. It does not change the system PostgreSQL instance on port 5432 and requires no sudo. Its local connections use trust authentication on loopback for the isolated demo; the application itself has no login/token layer.
+
+Each database is owned by its own role. Both start with ₦100,000 and beneficiaries John and Zainab. The presenter seed also includes Ayomide, GTBank (`058`), account `0123454821`. Participants add Ayomide themselves. Reseeding does not reset balances or duplicate beneficiaries.
+
+For an existing PostgreSQL installation, configure `PAYMENT_DATABASE_URL` with your own provisioned role/database and run `make migrate seed` instead. The reset script refuses external connection strings.
+
+## 3. Start Temporal
+
+In a separate terminal:
+
+```bash
+make temporal
+```
+
+Temporal listens on `127.0.0.1:7233`; its UI is at <http://localhost:8233>. Its persistent development store is `.local/temporal.db`, separate from the payment databases. Stop it with Ctrl-C; restart using the same command to preserve histories. This is a development server, not the workshop's PostgreSQL payment service.
+
+## 4. Choose a model explicitly
+
+Default (works without internet after dependencies are installed):
+
+```bash
+export MODEL_MODE=scripted
+```
+
+Live Gemini:
+
+```bash
+export MODEL_MODE=live
+export GEMINI_MODEL=gemini-3.6-flash
+read -rsp 'Gemini key: ' GEMINI_API_KEY; echo
+export GEMINI_API_KEY
+```
+
+The key is read worker-side and never sent in workflow inputs. No automatic model fallback occurs. Scripted mode is labelled in the API and answers; it is a constrained offline model adapter behind the same ADK/Temporal Activity boundary, not general AI reasoning. Supported examples:
+
+- `List my beneficiaries`
+- `Search beneficiaries for Ayo`
+- `Add Ayomide at GTBank, account 0123454821`
+- `What is my balance?`
+- `Send ₦10,000 to Ayomide`
+- `Check my last transfer and retry it if it failed`
+
+Unsupported offline prompts receive a help response. Missing/ambiguous information requires a corrected new request; this is not a general multi-turn chat application.
+
+## 5. Preflight and launch
+
+```bash
+make preflight                     # includes a small real model call in live mode
+make start                         # leave running
+```
+
+In another terminal, source the **same** environment before using `bin/pay`:
+
+```bash
+export WORKSHOP_INSTANCE=participant
+source scripts/env.sh
+./bin/pay ask --key first-list 'List my beneficiaries'
+./bin/pay wait REQUEST_ID_FROM_OUTPUT
+```
+
+`make start` launches payment service, REST app, and worker. Logs and PID files are under `.local/<instance>/`. Ctrl-C stops managed processes. The worker can be independently stopped during the restart demonstration; API and payment service remain running.
+
+| Setting | Presenter | Participant |
+|---|---|---|
+| REST app | 127.0.0.1:8080 | 127.0.0.1:8090 |
+| Payment service | 127.0.0.1:8081 | 127.0.0.1:8091 |
+| Database/role | devfest26_presenter | devfest26_participant |
+| Queue and workflow prefix | presenter + checkpoint | participant + checkpoint |
+
+Different computers each run their own local environment. On one computer the two instances may run simultaneously. Use fresh shells when changing instance; previously exported address/DSN overrides remain explicit overrides. Failure scenarios are attached to individual transfers. Resets affect only the selected managed database.
+
+## Payments and CLI flags
+
+```bash
+./bin/pay ask --key payment-1 'Send ₦10,000 to Ayomide'
+./bin/pay wait REQUEST_ID
+./bin/pay approve REQUEST_ID        # or: reject
+./bin/pay wait --terminal REQUEST_ID
+./bin/pay transaction TX_REFERENCE
+./bin/pay reconcile TX_REFERENCE   # status-only; cannot submit a replacement
+./bin/pay evidence
+```
+
+Put flags **before** the prompt/ID. Generated request keys are printed; retain them for HTTP retries. Reuse the same key only with the same prompt/scenario/expiry. Request deduplication is scoped to Temporal retention, while payment keys remain in PostgreSQL. Repeated approvals use a stable Update ID. Never treat a timeout as a reason to create a new request/payment key.
+
+Scenarios: `--scenario success|decline|unavailable|delayed|lost-response`. Approval defaults to 600 seconds; `--approval-seconds 5` demonstrates expiry. The configurable transfer limit is `TRANSFER_LIMIT_KOBO=10000000` (₦100,000). Restart workers/services after changing configuration; do not change limits midway through a demonstration.
+
+## Checks and slides
+
+```bash
+make test
+make integration                  # temporary schemas in the configured demo DB
+make vet
+source scripts/env.sh
+GOTOOLCHAIN=go1.27.3 go test -race ./...
+npm ci
+npm run slides                    # dist/workshop.html and dist/workshop.pdf
+```
+
+PDF export needs Chrome/Chromium. Set `CHROME_PATH` to a native browser binary if auto-discovery selects a nonworking WSL snap. No Node tools are needed to run the Go demo. Marp's transitive browser/download tooling currently reports npm audit advisories; use the pinned lockfile with this trusted local deck and an already installed browser. Do not force an incompatible Marp downgrade suggested by npm audit.
+
+Explicit reset, after stopping services and finishing active workflows:
+
+```bash
+make reset CONFIRM=--confirm
+```
+
+This preserves Temporal histories and audit logs; use fresh request keys afterwards. To stop the managed PostgreSQL cluster: `/usr/lib/postgresql/17/bin/pg_ctl -D .local/postgres stop`.

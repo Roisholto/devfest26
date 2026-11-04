@@ -1,0 +1,9 @@
+{
+  "name": "devfest26-workshop-slides",
+  "private": true,
+  "scripts": {
+    "slides": "node scripts/render-slides.mjs",
+    "slides:preview": "marp slides/workshop.md --theme-set slides/theme.css --allow-local-files --preview"
+  },
+  "devDependencies": { "@marp-team/marp-cli": "4.5.1" }
+}

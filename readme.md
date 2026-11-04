@@ -148,3 +148,18 @@ Basic familiarity with APIs and backend development will be useful. Prior experi
 ### Core Message
 
 **The LLM should decide what it wants to do. Your application should decide what it is allowed to do. Temporal should make sure the approved operation actually completes reliably.**
+
+### Workshop Implementation
+
+The implementation uses **Go 1.27.3**, Google ADK/Gemini, Temporal, and a simulated **Go/PostgreSQL 17** payment service. Participants extend a working reference application by implementing beneficiary creation, then inspect approval and failure recovery. Listing/search are supplied before the exercise. All model tool calls use native Temporal Dynamic Activities.
+
+- [Setup and commands](docs/setup.md)
+- [Ten-minute beneficiary exercise and complete code](docs/beneficiary-exercise.md)
+- [Checkpoint branches](docs/branches.md)
+- [Presenter runbook](docs/presenter.md)
+- [Architecture, validation, and REST interfaces](docs/architecture.md)
+- [Marp deck and speaker notes](slides/workshop.md)
+- [Follow-up: payment notifications](docs/practice-notifications.md)
+- [Follow-up: scheduled transfers](docs/practice-scheduled-transfers.md)
+
+For this fixed-account local demo, authentication infrastructure is omitted. Validation, allowed-tool policy, PostgreSQL idempotency, and explicit payment confirmation remain enforced. Adding a beneficiary needs no additional confirmation. Reliable completion includes definitive failure or explicitly unresolved status; it does not guarantee payment success.
