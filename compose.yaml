@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: workshop_admin
+      POSTGRES_DB: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - workshop-postgres:/var/lib/postgresql/data
+      - ./scripts/postgres-init.sql:/docker-entrypoint-initdb.d/01-workshop.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workshop_admin -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+volumes:
+  workshop-postgres:

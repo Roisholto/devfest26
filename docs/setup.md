@@ -30,6 +30,8 @@ Each database is owned by its own role. Both start with ₦100,000 and beneficia
 
 For an existing PostgreSQL installation, configure `PAYMENT_DATABASE_URL` with your own provisioned role/database and run `make migrate seed` instead. The reset script refuses external connection strings.
 
+Optional Docker alternative: stop the managed native cluster first, then run `docker compose up -d --wait postgres` and `make migrate seed`. Compose exposes only loopback port 55432 and initializes the same isolated roles/databases. Temporal and the Go processes still run natively. This alternative is supplied but was not run here because Docker is unavailable in this WSL environment.
+
 ## 3. Start Temporal
 
 In a separate terminal:

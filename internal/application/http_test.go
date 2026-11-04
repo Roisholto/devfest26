@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/mocks"
 
+	"devfest26/internal/agent"
 	"devfest26/internal/config"
 	"devfest26/internal/domain"
 )
@@ -65,5 +66,31 @@ func TestEnvironmentIsolation(t *testing.T) {
 	s.Handler().ServeHTTP(w, r)
 	if w.Code != 404 {
 		t.Fatalf("cross-environment request returned %d", w.Code)
+	}
+}
+
+func TestReusedUpdateIDCannotHideChangedDecision(t *testing.T) {
+	for _, same := range []bool{false, true} {
+		c := &mocks.Client{}
+		h := &mocks.WorkflowUpdateHandle{}
+		original := agent.Decision{ProposalID: "one", Approve: false}
+		h.On("Get", mock.Anything, mock.Anything).Run(func(a mock.Arguments) { *a.Get(1).(*string) = domain.Fingerprint(original) }).Return(nil)
+		c.On("UpdateWorkflow", mock.Anything, mock.Anything).Return(h, nil)
+		s := &Server{Temporal: c, Config: config.Config{Prefix: "participant-main"}}
+		body := `{"proposal_id":"one","approve":true}`
+		if same {
+			body = `{"proposal_id":"one","approve":false}`
+		}
+		r := httptest.NewRequest("POST", "/requests/participant-main-test/decision", strings.NewReader(body))
+		r.Header.Set("Idempotency-Key", "reused-update-id")
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		want := 409
+		if same {
+			want = 200
+		}
+		if w.Code != want {
+			t.Fatalf("same=%v: %d %s", same, w.Code, w.Body.String())
+		}
 	}
 }

@@ -55,7 +55,7 @@ func AgentWorkflow(ctx workflow.Context, in Input) (State, error) {
 	err := workflow.SetUpdateHandlerWithOptions(ctx, "decision", func(_ workflow.Context, d Decision) (string, error) {
 		if s.Decision != nil {
 			if *s.Decision == d {
-				return "already accepted", nil
+				return domain.Fingerprint(*s.Decision), nil
 			}
 			return "", fmt.Errorf("conflicting decision")
 		}
@@ -63,7 +63,7 @@ func AgentWorkflow(ctx workflow.Context, in Input) (State, error) {
 			return "", fmt.Errorf("stale, expired or unknown proposal")
 		}
 		s.Decision = &d
-		return "accepted", nil
+		return domain.Fingerprint(d), nil
 	}, workflow.UpdateHandlerOptions{Validator: func(d Decision) error {
 		if s.Decision != nil {
 			if *s.Decision == d {

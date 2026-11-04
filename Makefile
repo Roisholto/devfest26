@@ -35,3 +35,6 @@ demo:
 	source scripts/env.sh && python3 scripts/demo.py
 lab-check:
 	source scripts/env.sh && python3 scripts/lab-check.py $(LAB)
+verify:
+	source scripts/env.sh && TEST_DATABASE_URL="$$PAYMENT_DATABASE_URL" go test -race ./...
+	go vet ./...

@@ -180,7 +180,14 @@ func (s *Server) decision(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, domain.Conflict(fmt.Sprintf("decision rejected: %v", err)))
 		return
 	}
-	httpx.JSON(w, 200, map[string]string{"decision": out})
+	// Temporal deduplicates Update IDs without comparing payloads. Echoing a
+	// fingerprint from the workflow prevents a changed decision being reported
+	// as accepted when a caller reuses an already-completed Update ID.
+	if out != domain.Fingerprint(d) {
+		httpx.Error(w, domain.Conflict("decision key belongs to a different decision"))
+		return
+	}
+	httpx.JSON(w, 200, map[string]string{"decision": "accepted"})
 }
 func (s *Server) transaction(w http.ResponseWriter, r *http.Request) {
 	var out domain.Transfer
