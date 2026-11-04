@@ -32,5 +32,7 @@ func Load() Config {
 		}
 	}
 	prefix := i + "-" + checkpoint
-	return Config{Instance: i, Checkpoint: checkpoint, API: env("API_ADDRESS", api), Payment: env("PAYMENT_ADDRESS", pay), DSN: env("PAYMENT_DATABASE_URL", "postgres://devfest26_"+i+"@127.0.0.1:55432/devfest26_"+i+"?sslmode=disable"), Temporal: env("TEMPORAL_ADDRESS", "127.0.0.1:7233"), Queue: prefix, Prefix: prefix, Mode: env("MODEL_MODE", "scripted"), Model: env("GEMINI_MODEL", "gemini-3.6-flash"), Audit: env("MODEL_AUDIT_PATH", ".local/"+i+"/model-invocations.jsonl"), Limit: limit}
+	defaultDSN := "postgres://devfest26_" + i + "@127.0.0.1:" + env("PG_WORKSHOP_PORT", "55432") + "/devfest26_" + i + "?sslmode=disable"
+	dsn := env("DATABASE_URL", env("PAYMENT_DATABASE_URL", defaultDSN))
+	return Config{Instance: i, Checkpoint: checkpoint, API: env("API_ADDRESS", api), Payment: env("PAYMENT_ADDRESS", pay), DSN: dsn, Temporal: env("TEMPORAL_ADDRESS", "127.0.0.1:7233"), Queue: prefix, Prefix: prefix, Mode: env("MODEL_MODE", "scripted"), Model: env("GEMINI_MODEL", "gemini-3.6-flash"), Audit: env("MODEL_AUDIT_PATH", ".local/"+i+"/model-invocations.jsonl"), Limit: limit}
 }

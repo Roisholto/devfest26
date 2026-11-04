@@ -38,6 +38,9 @@ func run() error {
 		return err
 	}
 	arg := strings.Join(f.Args(), " ")
+	if err := config.LoadDotEnv(".env"); err != nil {
+		return err
+	}
 	cfg := config.Load()
 	c := httpx.NewClient("http://" + cfg.API)
 	ctx := context.Background()

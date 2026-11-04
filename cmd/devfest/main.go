@@ -35,7 +35,10 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: devfest payment|worker|api|migrate|seed|preflight|evidence")
+		return fmt.Errorf("usage: devfest payment|worker|api|migrate|seed|preflight|evidence|database-check|database-init")
+	}
+	if err := config.LoadDotEnv(".env"); err != nil {
+		return err
 	}
 	cfg := config.Load()
 	if cfg.Instance != "participant" && cfg.Instance != "presenter" {
@@ -47,6 +50,14 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	switch os.Args[1] {
+	case "database-init":
+		dbctx, done := context.WithTimeout(ctx, 12*time.Second)
+		defer done()
+		if err := payment.InitDatabase(dbctx, cfg.DSN); err != nil {
+			return err
+		}
+		fmt.Println("Configured PostgreSQL database is ready")
+		return nil
 	case "replay":
 		if len(os.Args) < 3 {
 			return fmt.Errorf("usage: devfest replay WORKFLOW_ID [history-output.json]")
@@ -65,15 +76,18 @@ func run() error {
 		}
 		fmt.Println("History replay passed:", os.Args[2])
 		return nil
-	case "payment", "migrate", "seed", "preflight", "evidence":
+	case "payment", "migrate", "seed", "preflight", "evidence", "database-check":
 		dbctx, done := context.WithTimeout(ctx, 8*time.Second)
 		store, err := payment.Open(dbctx, cfg.DSN, cfg.Limit)
 		done()
 		if err != nil {
-			return fmt.Errorf("PostgreSQL: %w", err)
+			return payment.ConnectionError(err)
 		}
 		defer store.Pool.Close()
 		switch os.Args[1] {
+		case "database-check":
+			fmt.Println("PostgreSQL connection verified; no schema or data changes made")
+			return nil
 		case "migrate":
 			return store.Migrate(ctx)
 		case "seed":

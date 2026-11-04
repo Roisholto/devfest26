@@ -28,7 +28,9 @@ This starts a **separate, user-owned local cluster on port 55432**, creates only
 
 Each database is owned by its own role. Both start with ₦100,000 and beneficiaries John and Zainab. The presenter seed also includes Ayomide, GTBank (`058`), account `0123454821`. Participants add Ayomide themselves. Reseeding does not reset balances or duplicate beneficiaries.
 
-For an existing PostgreSQL installation, configure `PAYMENT_DATABASE_URL` with your own provisioned role/database and run `make migrate seed` instead. The reset script refuses external connection strings.
+For an existing PostgreSQL installation, put `DATABASE_URL` in the repository-root `.env` using your provisioned role/database. Both Go binaries and the shell launcher load it automatically. Exported variables override file values; `DATABASE_URL` is the canonical database setting and `PAYMENT_DATABASE_URL` is a legacy fallback. A URL may be quoted, and `&` is treated as data rather than shell syntax. `.env` is ignored by Git and is not evaluated as shell code.
+
+Run `./bin/devfest database-check` for a connection-only check with no schema/data changes. When ready to initialize the workshop, run `make setup`: it skips the native cluster for an explicitly configured database, creates the selected database if it is missing on a local server and the supplied role has permission, then migrates/seeds it. Hosted databases must already be provisioned. `make migrate seed` only installs tables in an existing database. The reset script refuses external connection strings. Use separate database settings in fresh shells if running presenter and participant instances against externally provisioned databases; a single configured URL otherwise targets the same database for both.
 
 Optional Docker alternative: stop the managed native cluster first, then run `docker compose up -d --wait postgres` and `make migrate seed`. Compose exposes only loopback port 55432 and initializes the same isolated roles/databases. Temporal and the Go processes still run natively. This alternative is supplied but was not run here because Docker is unavailable in this WSL environment.
 

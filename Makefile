@@ -12,7 +12,8 @@ migrate: build
 	source scripts/env.sh && ./bin/devfest migrate
 seed: build
 	source scripts/env.sh && ./bin/devfest seed
-setup: postgres migrate seed
+setup: build
+	bash scripts/setup.sh
 preflight:
 	source scripts/env.sh && ./bin/devfest preflight
 start:
