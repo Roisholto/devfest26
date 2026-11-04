@@ -85,7 +85,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 	if s.Config.Mode == "scripted" {
 		model = "scripted"
 	}
-	_, err := s.Temporal.ExecuteWorkflow(r.Context(), client.StartWorkflowOptions{ID: id, TaskQueue: s.Config.Queue, WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE, Memo: map[string]any{"request_fingerprint": hash}}, agent.AgentWorkflow, agent.Input{Prompt: in.Prompt, Model: model, Mode: s.Config.Mode, Scenario: in.Scenario, ApprovalSeconds: in.ApprovalSeconds})
+	_, err := s.Temporal.ExecuteWorkflow(r.Context(), client.StartWorkflowOptions{ID: id, TaskQueue: s.Config.Queue, WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE, WorkflowExecutionErrorWhenAlreadyStarted: true, Memo: map[string]any{"request_fingerprint": hash}}, agent.AgentWorkflow, agent.Input{Prompt: in.Prompt, Model: model, Mode: s.Config.Mode, Scenario: in.Scenario, ApprovalSeconds: in.ApprovalSeconds})
 	var exists *serviceerror.WorkflowExecutionAlreadyStarted
 	if errors.As(err, &exists) {
 		desc, e := s.Temporal.DescribeWorkflowExecution(r.Context(), id, "")

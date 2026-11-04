@@ -29,7 +29,7 @@ def wait(request_id, terminal=False, timeout=50):
     while time.monotonic() < deadline:
         try:
             result = request("GET", "/requests/" + request_id)
-            waiting = result["phase"] in ("reasoning", "executing") or (terminal and result["phase"] in ("awaiting_approval", "scheduled"))
+            waiting = result["phase"] in ("reasoning", "executing", "notifying") or (terminal and result["phase"] in ("awaiting_approval", "scheduled"))
             if not waiting:
                 return result
         except (urllib.error.URLError, TimeoutError):

@@ -79,7 +79,7 @@ func run() error {
 			err := c.Do(ctx, "GET", "/requests/"+arg, "", nil, &out)
 			if err == nil {
 				lastErr = nil
-				waiting := out.Phase == "reasoning" || out.Phase == "executing" || (*terminal && (out.Phase == "awaiting_approval" || out.Phase == "scheduled"))
+				waiting := out.Phase == "reasoning" || out.Phase == "executing" || out.Phase == "notifying" || (*terminal && (out.Phase == "awaiting_approval" || out.Phase == "scheduled"))
 				if !waiting {
 					printJSON(out)
 					return nil

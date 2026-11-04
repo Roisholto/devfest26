@@ -174,10 +174,12 @@ func AgentWorkflow(ctx workflow.Context, in Input) (State, error) {
 	}
 	s.Answer = fmt.Sprintf("Transfer %s. Transaction reference: %s. %s", s.Phase, result.Reference, result.Reason)
 	if NotificationsEnabled && result.Status == "succeeded" {
+		s.Phase = "notifying"
 		nctx := workflow.WithActivityOptions(ctx, toolOptions())
 		if err := workflow.ExecuteActivity(nctx, "DeliverReceipt", result.Key).Get(ctx, nil); err != nil {
 			s.Error = "payment succeeded; receipt delivery failed: " + err.Error()
 		}
+		s.Phase = "succeeded"
 	}
 	return s, nil
 }
