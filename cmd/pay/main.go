@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -109,7 +110,7 @@ func run() error {
 		}
 		return err
 	case "transaction", "reconcile":
-		method, path := "GET", "/transactions/"+arg
+		method, path := "GET", "/transactions/"+url.PathEscape(arg)
 		if cmd == "reconcile" {
 			method = "POST"
 			path += "/reconcile"
