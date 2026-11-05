@@ -6,7 +6,11 @@ The **agent workflow** starts with the request and runs ADK through `googleadk.N
 
 Static Activities may also be called by string name. Native dynamic resolution is different: unregistered Activity types reach the one fallback dispatcher. Individual tool names are deliberately not statically registered. Model invocation and internal `SubmitTransfer`/`ReadTransfer` Activities are separately registered and absent from the model's tool catalog.
 
-All I/O stays out of workflow code. Activities access the simulated payment service over HTTP; only the service accesses PostgreSQL. Workflow code uses Temporal time/timers and captures tool results in deterministic state. Tool schemas guide the model; runtime validation is authoritative. A failed tool stops further tool side effects in that request and the user can submit a corrected instruction.
+All I/O stays out of workflow code. Activities access the simulated payment service over HTTP; only the service accesses PostgreSQL. Workflow code uses Temporal time/timers and captures tool results in deterministic state. Tool schemas guide the model; runtime validation is authoritative. A failed tool prevents subsequent tool scheduling in that request and the user can submit a corrected instruction.
+
+Gemini can return multiple tool calls in a single turn. The adapter obtains each calling coroutine's context through `googleadk.WorkflowContext(toolCtx)` before waiting on an Activity; a context captured from the root workflow cannot safely block a parallel tool coroutine. A preparation-in-flight guard preserves the one-proposal boundary when the model requests duplicate preparations concurrently. Calls already scheduled before another tool fails can still complete; the failure prevents subsequent tool scheduling.
+
+Model retry limits are passed explicitly to `googleadk.NewModel` using `WithModelActivityOptions`; the bridge replaces inherited workflow Activity options. Each model Activity has at most three attempts, a 40-second attempt timeout and a 100-second total budget, with 15–30-second backoff. The agent permits at most eight model turns. The underlying Gemini SDK makes one attempt so it cannot multiply Temporal's retries. Completed recorded calls are reused during replay; an interrupted or unrecorded call may still incur repeated model charges.
 
 ## Payment correctness
 

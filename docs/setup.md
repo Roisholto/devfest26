@@ -57,8 +57,8 @@ Live Gemini:
 ```bash
 export MODEL_MODE=live
 export GEMINI_MODEL=gemini-3.6-flash
-read -rsp 'Gemini key: ' GEMINI_API_KEY; echo
-export GEMINI_API_KEY
+# GEMINI_API_KEY (or GOOGLE_API_KEY) is loaded from the root .env.
+# Alternatively, export it in this shell; exported settings take precedence.
 ```
 
 The key is read worker-side and never sent in workflow inputs. No automatic model fallback occurs. Scripted mode is labelled in the API and answers; it is a constrained offline model adapter behind the same ADK/Temporal Activity boundary, not general AI reasoning. Supported examples:
@@ -71,6 +71,10 @@ The key is read worker-side and never sent in workflow inputs. No automatic mode
 - `Check my last transfer and retry it if it failed`
 
 Unsupported offline prompts receive a help response. Missing/ambiguous information requires a corrected new request; this is not a general multi-turn chat application.
+
+Run `make live-check` to verify your actual Gemini key, function calls, validation, approval, worker restart and lost-response reconciliation. Start Temporal first. This command builds the Go binaries, creates a temporary schema in the configured PostgreSQL database, launches isolated services on available loopback ports, and removes the schema/processes when finished. It does not reset or debit the regular demo account. It uses real model calls and requires the `psql` client and permission to create a schema. Evidence is saved under `.local/live-check/<run>/result.json`.
+
+One agent turn can make several model requests. The live check pauses 65 seconds between prompts to accommodate a five-requests-per-minute project quota; allow roughly ten minutes. With sufficient quota, explicitly run `LIVE_CHECK_PAUSE_SECONDS=0 make live-check`. Model Activities are explicitly configured through ADK's `WithModelActivityOptions` for at most three attempts, a 40-second attempt timeout and a 100-second overall budget, with 15–30-second retry backoff. Exhausted provider retries return an error without authorizing a payment. Free-tier quotas and upstream model availability can interrupt a live rehearsal; retain the scripted fallback for the venue.
 
 ## 5. Preflight and launch
 
@@ -125,9 +129,12 @@ source scripts/env.sh
 GOTOOLCHAIN=go1.27.3 go test -race ./...
 npm ci
 npm run slides                    # dist/workshop.html and dist/workshop.pdf
+node scripts/capture-artifacts.mjs # offline font checks, layout checks, screenshots
 ```
 
 PDF export needs Chrome/Chromium. Set `CHROME_PATH` to a native browser binary if auto-discovery selects a nonworking WSL snap. No Node tools are needed to run the Go demo. Marp's transitive browser/download tooling currently reports npm audit advisories; use the pinned lockfile with this trusted local deck and an already installed browser. Do not force an incompatible Marp downgrade suggested by npm audit.
+
+Google Sans and Roboto Mono are bundled with their licenses and embedded in the PDF, matching the supplied DevFest template. Keep `dist/assets/` alongside `dist/workshop.html` when sharing the offline HTML. The capture check blocks network requests and verifies the fonts Chromium actually renders, saving `dist/font-check.json`; it also checks all 21 slides for overflow.
 
 Explicit reset, after stopping services and finishing active workflows:
 

@@ -39,6 +39,8 @@ type State struct {
 	Tools     []string         `json:"tools"`
 	Decision  *Decision        `json:"decision,omitempty"`
 	Error     string           `json:"error,omitempty"`
+	// Guard the one-proposal boundary before a concurrent Activity yields.
+	proposalInFlight bool
 }
 
 func toolOptions() workflow.ActivityOptions {
@@ -84,13 +86,16 @@ func AgentWorkflow(ctx workflow.Context, in Input) (State, error) {
 		s.Answer = "Runtime ready. Continue at workshop/01-read-tools."
 		return s, nil
 	}
-	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 40 * time.Second, ScheduleToCloseTimeout: 100 * time.Second, RetryPolicy: &temporal.RetryPolicy{InitialInterval: time.Second, MaximumInterval: 4 * time.Second, MaximumAttempts: 3}})
+	// The ADK bridge replaces context options with its own model options. Set
+	// the retry budget on the model explicitly; context options alone do not
+	// bound InvokeModel. Backoff also avoids immediately repeating quota errors.
+	modelOptions := workflow.ActivityOptions{StartToCloseTimeout: 40 * time.Second, ScheduleToCloseTimeout: 100 * time.Second, RetryPolicy: &temporal.RetryPolicy{InitialInterval: 15 * time.Second, MaximumInterval: 30 * time.Second, MaximumAttempts: 3}}
 	tools := []tool.Tool{}
 	for _, spec := range Catalog() {
-		tools = append(tools, &modelTool{spec: spec, ctx: ctx, state: &s, prompt: in.Prompt})
+		tools = append(tools, &modelTool{spec: spec, state: &s, prompt: in.Prompt})
 	}
 	calls := 0
-	root, err := llmagent.New(llmagent.Config{Name: "payment_assistant", Model: googleadk.NewModel(in.Model), Instruction: instruction, Tools: tools, BeforeModelCallbacks: []llmagent.BeforeModelCallback{func(_ adkagent.Context, _ *model.LLMRequest) (*model.LLMResponse, error) {
+	root, err := llmagent.New(llmagent.Config{Name: "payment_assistant", Model: googleadk.NewModel(in.Model, googleadk.WithModelActivityOptions(modelOptions)), Instruction: instruction, Tools: tools, BeforeModelCallbacks: []llmagent.BeforeModelCallback{func(_ adkagent.Context, _ *model.LLMRequest) (*model.LLMResponse, error) {
 		calls++
 		if calls > 8 {
 			return nil, fmt.Errorf("model call limit reached")

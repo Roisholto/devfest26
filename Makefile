@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 export GOTOOLCHAIN := go1.27.3
-.PHONY: build setup postgres temporal migrate seed preflight start worker test integration vet slides reset
+.PHONY: build setup postgres temporal migrate seed preflight start worker test integration vet slides reset live-check
 build:
 	go build -o bin/devfest ./cmd/devfest
 	go build -o bin/pay ./cmd/pay
@@ -36,6 +36,8 @@ demo:
 	source scripts/env.sh && python3 scripts/demo.py
 lab-check:
 	source scripts/env.sh && python3 scripts/lab-check.py $(LAB)
+live-check: build
+	source scripts/env.sh && MODEL_MODE=live python3 scripts/live-check.py
 verify:
 	source scripts/env.sh && TEST_DATABASE_URL="$$PAYMENT_DATABASE_URL" go test -race ./...
 	go vet ./...

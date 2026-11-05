@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"go.temporal.io/googleadk"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/temporal"
@@ -268,7 +269,6 @@ func (r *Router) dispatch(ctx context.Context, name string, args converter.Encod
 // modelTool is a workflow-side ADK adapter. Its only I/O is a named Activity.
 type modelTool struct {
 	spec   Spec
-	ctx    workflow.Context
 	state  *State
 	prompt string
 }
@@ -286,7 +286,7 @@ func (t *modelTool) Declaration() *genai.FunctionDeclaration {
 func (t *modelTool) ProcessRequest(_ adkagent.Context, req *model.LLMRequest) error {
 	return toolutils.PackTool(req, t)
 }
-func (t *modelTool) Run(_ adkagent.Context, args any) (map[string]any, error) {
+func (t *modelTool) Run(toolCtx adkagent.Context, args any) (map[string]any, error) {
 	// ADK omits the empty Args map on a zero-argument function call. Normalize
 	// that SDK representation before crossing the strict Activity boundary.
 	if len(t.spec.Fields) == 0 && toMap(args) == nil {
@@ -295,7 +295,7 @@ func (t *modelTool) Run(_ adkagent.Context, args any) (map[string]any, error) {
 	if t.state.Error != "" {
 		return nil, fmt.Errorf("a previous tool failed; ask the user for a corrected request")
 	}
-	if t.Name() == "prepare_transfer" && t.state.Proposal != nil {
+	if t.Name() == "prepare_transfer" && (t.state.Proposal != nil || t.state.proposalInFlight) {
 		return nil, domain.Invalid("only one proposal is allowed per request")
 	}
 	if t.Name() == "prepare_transfer" && strings.Contains(strings.ToLower(t.prompt), "retry") {
@@ -304,7 +304,17 @@ func (t *modelTool) Run(_ adkagent.Context, args any) (map[string]any, error) {
 			return nil, domain.Invalid("retry requires a definitively failed transaction reference")
 		}
 	}
-	ctx := workflow.WithActivityOptions(t.ctx, toolOptions())
+	// ADK can fan out several tool calls in one turn. Each Temporal coroutine
+	// must block on its own context, never the enclosing workflow's context.
+	active, ok := googleadk.WorkflowContext(toolCtx)
+	if !ok {
+		return nil, fmt.Errorf("tool requires a Temporal ADK context")
+	}
+	if t.Name() == "prepare_transfer" {
+		t.state.proposalInFlight = true
+		defer func() { t.state.proposalInFlight = false }()
+	}
+	ctx := workflow.WithActivityOptions(active, toolOptions())
 	var out map[string]any
 	err := workflow.ExecuteActivity(ctx, t.Name(), args).Get(ctx, &out)
 	if err != nil {
