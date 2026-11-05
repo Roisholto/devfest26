@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Record real local demo results, including a real agent crash.
 
-Requires make start in another terminal, using the same sourced environment.
+Run make payment and make agent in separate terminals first.
+The recovery step asks you to stop/restart the agent manually.
 It adds simulated transactions; no database reset is performed.
 """
 import collections
@@ -9,12 +10,10 @@ import html
 import json
 import os
 from pathlib import Path
-import signal
-import subprocess
 import time
-from demo_client import INSTANCE, ask, wait, decide, evidence, request
+from demo_client import ask, wait, decide, evidence, request
 
-out = Path("dist/fallback") / INSTANCE
+out = Path("dist/fallback")
 out.mkdir(parents=True, exist_ok=True)
 events = []
 started = time.monotonic()
@@ -28,7 +27,7 @@ def save(name, value):
     (out / (name + ".json")).write_text(json.dumps(value, indent=2, ensure_ascii=False))
 
 def invocation_counts(workflow_id):
-    path = Path(os.environ.get("MODEL_AUDIT_PATH", f".local/{INSTANCE}/model-invocations.jsonl"))
+    path = Path(os.environ.get("MODEL_AUDIT_PATH", ".local/model-invocations.jsonl"))
     counts = collections.Counter()
     for line in path.read_text().splitlines():
         event = json.loads(line)
@@ -36,7 +35,7 @@ def invocation_counts(workflow_id):
             counts[event["activity_id"]] += 1
     return dict(counts)
 
-record("MODE", request("GET", "/health"))
+record("MODEL", request("GET", "/health"))
 
 def payment(scenario, restart=False):
     before = evidence()
@@ -46,15 +45,7 @@ def payment(scenario, restart=False):
     record("PROPOSAL " + rid, pending)
     counts_before = invocation_counts(rid)
     if restart:
-        pid_file = Path(f".local/{INSTANCE}/agent.pid")
-        pid = int(pid_file.read_text())
-        command = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-        assert Path(os.fsdecode(command[0])).name == "agent", "refuse to stop an unrelated process"
-        os.kill(pid, signal.SIGKILL)
-        time.sleep(2)
-        log = open(f".local/{INSTANCE}/agent-restarted.log", "ab", buffering=0)
-        agent = subprocess.Popen(["./bin/agent"], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        pid_file.write_text(str(agent.pid))
+        input("Stop the agent with Ctrl-C, run make agent again, then press Enter here: ")
         recovered = wait(rid)
         assert recovered["proposal"] == pending["proposal"]
         assert invocation_counts(rid) == counts_before, "completed model calls were invoked again"
@@ -65,7 +56,7 @@ def payment(scenario, restart=False):
     after = evidence()
     assert after["debits"] == before["debits"] + 1
     assert after["balance_kobo"] == before["balance_kobo"] - 1000000
-    bundle = {"recorded_demo": True, "mode": result["mode"], "request_id": rid, "proposal": pending, "result": result, "evidence_before": before, "evidence_after": after}
+    bundle = {"recorded_demo": True, "model": result["model"], "request_id": rid, "proposal": pending, "result": result, "evidence_before": before, "evidence_after": after}
     record("RESULT " + scenario, bundle)
     return bundle
 
@@ -75,15 +66,15 @@ save("lost-response", payment("lost-response"))
 save("last-transfer", wait(ask("Check my last transfer and retry it if it failed")))
 
 with (out / "recording.cast").open("w") as f:
-    f.write(json.dumps({"version": 2, "width": 110, "height": 36, "title": "Recorded DevFest payment demo — " + INSTANCE}) + "\n")
+    f.write(json.dumps({"version": 2, "width": 110, "height": 36, "title": "Recorded DevFest payment demo"}) + "\n")
     for event in events:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 cards = []
 for name in ("opening", "restart", "lost-response"):
     data = json.loads((out / (name + ".json")).read_text())
-    summary = {"mode": data["mode"], "request_id": data["request_id"], "payment_key": data["result"]["transfer"]["payment_key"], "reference": data["result"]["transfer"]["reference"], "status": data["result"]["phase"], "debits_before": data["evidence_before"]["debits"], "debits_after": data["evidence_after"]["debits"], "balance_before": data["evidence_before"]["balance_kobo"], "balance_after": data["evidence_after"]["balance_kobo"]}
-    cards.append(f'<section id="{name}"><h1>{name.replace("-", " ").title()}</h1><p>Recorded local run · {html.escape(INSTANCE)} · {html.escape(data["mode"])} mode</p><pre>{html.escape(json.dumps(summary, indent=2, ensure_ascii=False))}</pre><p>Full JSON and terminal recording are included alongside this page.</p></section>')
+    summary = {"model": data["model"], "request_id": data["request_id"], "payment_key": data["result"]["transfer"]["payment_key"], "reference": data["result"]["transfer"]["reference"], "status": data["result"]["phase"], "debits_before": data["evidence_before"]["debits"], "debits_after": data["evidence_after"]["debits"], "balance_before": data["evidence_before"]["balance_kobo"], "balance_after": data["evidence_after"]["balance_kobo"]}
+    cards.append(f'<section id="{name}"><h1>{name.replace("-", " ").title()}</h1><p>Recorded local run · {html.escape(data["model"])}</p><pre>{html.escape(json.dumps(summary, indent=2, ensure_ascii=False))}</pre><p>Full JSON and terminal recording are included alongside this page.</p></section>')
 page = '<!doctype html><meta charset="utf-8"><title>Recorded DevFest demo</title><style>body{margin:0;background:#f0f0f0;color:#202124;font:24px Arial}section{min-height:680px;box-sizing:border-box;padding:45px 65px;border-bottom:2px solid #222}h1{margin:0 0 15px;font-size:45px}pre{font:19px monospace;background:#ffe8a1;border:2px solid #222;border-radius:25px;padding:25px;white-space:pre-wrap}p{font-size:21px}</style>' + "".join(cards)
 (out / "index.html").write_text(page)
 print("PASS: opening, agent crash, one-debit lost-response reconciliation, and safe last-transfer lookup. Recorded artifacts:", out)

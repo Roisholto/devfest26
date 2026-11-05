@@ -163,4 +163,6 @@ The implementation uses **Go 1.27.3**, Google ADK/Gemini, Temporal, and a simula
 
 For this fixed-account local demo, authentication infrastructure is omitted. Validation, allowed-tool policy, PostgreSQL idempotency, and explicit payment confirmation remain enforced. Adding a beneficiary needs no additional confirmation. Reliable completion includes definitive failure or explicitly unresolved status; it does not guarantee payment success.
 
-The starter already lists/searches beneficiaries and sends approved payments to seeded recipients. Complete beneficiary creation with the one-file guide or its supplied replacement file. Use `make restart-agent` after editing; there are no checkpoint settings or branch switches.
+The starter already lists/searches beneficiaries and sends approved payments to seeded recipients. Complete beneficiary creation with the one-file guide or its supplied replacement file. Stop the agent with Ctrl-C and run `make agent` again after editing; there are no checkpoint settings or branch switches.
+
+Start the services in separate terminals with `make payment` and `make agent`. Each person uses the same configuration: `DATABASE_URL` and a Gemini key. There are no presenter/participant or live/scripted flags.

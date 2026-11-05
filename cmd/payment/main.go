@@ -29,8 +29,8 @@ func run() error {
 
 	cfg := config.Load()
 
-	if cfg.Instance != "participant" && cfg.Instance != "presenter" {
-		return fmt.Errorf("WORKSHOP_INSTANCE must be presenter or participant")
+	if cfg.DSN == "" {
+		return fmt.Errorf("DATABASE_URL is required")
 	}
 
 	command := "serve"
@@ -85,7 +85,7 @@ func run() error {
 	case "migrate":
 		return store.Migrate(ctx)
 	case "seed":
-		return store.Seed(ctx, cfg.Instance == "presenter")
+		return store.Seed(ctx)
 	case "evidence":
 		evidence, err := store.Evidence(ctx)
 
@@ -101,7 +101,7 @@ func run() error {
 			return fmt.Errorf("migrate and seed first: %w", err)
 		}
 
-		fmt.Printf("PAYMENT READY instance=%s\n", cfg.Instance)
+		fmt.Println("PAYMENT READY")
 
 		return nil
 	default:

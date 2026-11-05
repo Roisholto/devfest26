@@ -12,15 +12,9 @@ if [ -f .env ]; then
   if [ "$task_dotenv_status" != 0 ]; then return 1 2>/dev/null || exit 1; fi
   unset task_dotenv_status task_dotenv_key task_dotenv_value
 fi
-export WORKSHOP_INSTANCE="${WORKSHOP_INSTANCE:-participant}"
-case "$WORKSHOP_INSTANCE" in presenter|participant) ;; *) echo 'Choose presenter or participant' >&2; return 1 2>/dev/null || exit 1;; esac
-export MODEL_MODE="${MODEL_MODE:-scripted}"
-export GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.6-flash}"
-export PG_WORKSHOP_PORT="${PG_WORKSHOP_PORT:-55432}"
-export PAYMENT_DATABASE_URL="${DATABASE_URL:-${PAYMENT_DATABASE_URL:-postgres://devfest26_${WORKSHOP_INSTANCE}@127.0.0.1:${PG_WORKSHOP_PORT}/devfest26_${WORKSHOP_INSTANCE}?sslmode=disable}}"
-if [ "$WORKSHOP_INSTANCE" = presenter ]; then
-  export API_ADDRESS="${API_ADDRESS:-127.0.0.1:8080}" PAYMENT_ADDRESS="${PAYMENT_ADDRESS:-127.0.0.1:8081}"
-else
-  export API_ADDRESS="${API_ADDRESS:-127.0.0.1:8090}" PAYMENT_ADDRESS="${PAYMENT_ADDRESS:-127.0.0.1:8091}"
+# Verification helpers reuse the explicitly configured database URL.
+export PAYMENT_DATABASE_URL="${DATABASE_URL:-${PAYMENT_DATABASE_URL:-}}"
+if [ -z "$PAYMENT_DATABASE_URL" ]; then
+  echo 'DATABASE_URL is required in .env or the environment.' >&2
+  return 1 2>/dev/null || exit 1
 fi
-export MODEL_AUDIT_PATH="${MODEL_AUDIT_PATH:-.local/${WORKSHOP_INSTANCE}/model-invocations.jsonl}"

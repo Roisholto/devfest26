@@ -9,7 +9,7 @@ Each service has its own entry point and executable:
 - **`cmd/agent` → `bin/agent`**: REST API and Temporal worker in one process, sharing one Temporal client. `internal/api` owns requests/approval; `internal/agent/worker.go` owns registrations.
 - **`cmd/payment` → `bin/payment`**: the simulated provider, its HTTP boundary and PostgreSQL storage. Only this service accesses payment tables.
 
-Temporal and PostgreSQL retain their existing versions and persistence. Restarting/crashing the agent temporarily removes both its API and its worker; the provider can continue processing independently. The Makefile keeps the provider alive during agent restarts. Both binaries start their service without a role subcommand. Database initialization/migration/seed/checks belong to `bin/payment`; Temporal/model preflight and history replay belong to `bin/agent`.
+Temporal and PostgreSQL retain their existing versions and persistence. Restarting/crashing the agent temporarily removes both its API and its worker; the provider can continue processing independently. Run each service in its own terminal; stop/restart the agent manually while leaving the provider running. Both binaries start their service without a role subcommand. Database initialization/migration/seed/checks belong to `bin/payment`; Temporal/model preflight and history replay belong to `bin/agent`.
 
 ## Read four files
 
@@ -47,9 +47,9 @@ The response-loss scenario closes a real TCP connection after the provider commi
 
 The API exposes request creation/state, explicit proposal decisions, transaction lookup and status-only reconciliation. JSON is strict and bounded. Request keys reject changed payloads; decision Update acknowledgements bind the actual decision even if an Update ID is reused. Actor state and references come from the workflow/provider, not model narration.
 
-Fixed queues are `devfest26-participant` and `devfest26-presenter`; they do not depend on Git. Verification overrides `TEMPORAL_TASK_QUEUE` and uses isolated PostgreSQL schemas and free loopback ports. Earlier histories remain stored under their original queues. No existing database, infrastructure version or history is reset by the reorganization.
+The default queue is `devfest26-workshop`, independent of the person running it and of Git. Verification overrides `TEMPORAL_TASK_QUEUE` and uses isolated PostgreSQL schemas and free loopback ports. Earlier histories remain stored under their original queues. No existing database, infrastructure version or history is reset by the reorganization.
 
-Services bind to localhost and use one fixed simulated account. Authentication infrastructure is outside this workshop.
+There are no presenter/participant or live/scripted settings. Production execution always uses Gemini; the deterministic model fixture is compiled only in unit tests. Each computer uses its configured database. Services bind to localhost and use one fixed simulated account. Authentication infrastructure is outside this workshop.
 
 ## Sources
 

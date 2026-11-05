@@ -29,7 +29,7 @@ From natural-language instructions to confirmed, recoverable payments.
 
 **What if the payment succeeds, but its response disappears?**
 
-<!-- 0:30–4:00. Opening demo on main in the presenter environment. See docs/presenter.md. Show ask, wait, approve, wait --terminal. Use the actual returned reference. No failure yet. If live infrastructure is unavailable use dist/fallback/presenter/opening.png and the saved JSON from make demo. -->
+<!-- 0:30–4:00. Opening demo on main in the presenter's own checkout. See docs/presenter.md. Show ask, wait, approve, wait --terminal. Use the actual returned reference. No failure yet. If live infrastructure is unavailable use dist/fallback/opening.png and the saved JSON from scripts/demo.py. -->
 
 ---
 # What you will build and explore
@@ -40,7 +40,7 @@ From natural-language instructions to confirmed, recoverable payments.
 - Inspect dynamic tool dispatch and agent recovery.
 - Verify **one debit** after a lost response.
 
-<!-- 4:00–5:00. Establish the learner contract. Authentication is simplified to one fixed local account. Participant and presenter environments are separate. Search is implemented beforehand. -->
+<!-- 4:00–5:00. Establish the learner contract. Authentication is simplified to one fixed local account. Everyone runs the same configuration on their own computer. Search is implemented beforehand. -->
 
 ---
 # Two Go processes. Two workflows.
@@ -143,9 +143,9 @@ func (r *Router) Execute(
 
 ```bash
 make setup
-make start
-# After editing beneficiary.go:
-make restart-agent
+make payment  # its own terminal
+make agent    # another terminal
+# After editing: Ctrl-C, then make agent
 ```
 
 Existing **listing and search already work**.<br>
@@ -182,7 +182,7 @@ Guide: `docs/beneficiary-exercise.md`
 
 **Dispatcher → service → database constraints**
 
-<!-- 27:00–30:00. Run make exercise-check and the direct curl example in the guide. Exactly 10 ASCII digits, no padding/truncation/whitespace repair. Format validation is not real bank verification. Invalid operations make no mutation; previous successful operations remain committed. -->
+<!-- 27:00–30:00. Run scripts/exercise-check.py and the direct curl example in the guide. Exactly 10 ASCII digits, no padding/truncation/whitespace repair. Format validation is not real bank verification. Invalid operations make no mutation; previous successful operations remain committed. -->
 
 ---
 <!-- _class: recovery -->
@@ -195,7 +195,7 @@ Guide: `docs/beneficiary-exercise.md`
 
 Inspect the same workflow/proposal and pre-restart model invocations.
 
-<!-- 30:00–40:00. The presenter has completed the one-file exercise in their own checkout. Use docs/presenter.md or make demo. The API is temporarily unavailable during the crash; Temporal and the provider stay up. Snapshot model audit lines before shutdown and after restart BEFORE approving; no pre-existing completed calls may be invoked again. Later operations/narration can legitimately introduce new calls. If infrastructure fails use fallback recording/screenshots, clearly identified as recorded. -->
+<!-- 30:00–40:00. The presenter has completed the one-file exercise in their own checkout. Use docs/presenter.md or scripts/demo.py. The API is temporarily unavailable during the crash; Temporal and the provider stay up. Snapshot model audit lines before shutdown and after restart BEFORE approving; no pre-existing completed calls may be invoked again. Later operations/narration can legitimately introduce new calls. If infrastructure fails use fallback recording/screenshots, clearly identified as recorded. -->
 
 ---
 <!-- _class: recovery -->

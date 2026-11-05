@@ -131,7 +131,6 @@ func TestApprovalRequiredAndRejectionNoDebit(t *testing.T) {
 			env.ExecuteWorkflow(AgentWorkflow, Input{
 				Prompt:   "Send ₦10,000 to Ayomide",
 				Model:    "scripted",
-				Mode:     "scripted",
 				Scenario: "success",
 			})
 
@@ -174,7 +173,6 @@ func TestExpiryAndStaleApproval(t *testing.T) {
 	env.ExecuteWorkflow(AgentWorkflow, Input{
 		Prompt:          "Send ₦10,000 to Ayomide",
 		Model:           "scripted",
-		Mode:            "scripted",
 		ApprovalSeconds: 2,
 	})
 
@@ -213,7 +211,6 @@ func TestSuccessfulReadToolsNeedNoApproval(t *testing.T) {
 	env.ExecuteWorkflow(AgentWorkflow, Input{
 		Prompt: "Search beneficiaries for Ayo",
 		Model:  "scripted",
-		Mode:   "scripted",
 	})
 
 	if err := env.GetWorkflowError(); err != nil {
@@ -263,7 +260,6 @@ func TestModelFailureHasBoundedRetries(t *testing.T) {
 	env.ExecuteWorkflow(AgentWorkflow, Input{
 		Prompt: "List my beneficiaries",
 		Model:  "unavailable",
-		Mode:   "live",
 	})
 
 	if err := env.GetWorkflowError(); err != nil {
@@ -317,7 +313,6 @@ func TestParallelToolCallsUseTheirOwnWorkflowContext(t *testing.T) {
 	env.ExecuteWorkflow(AgentWorkflow, Input{
 		Prompt: "Find Ayomide and check my balance",
 		Model:  "parallel-reads",
-		Mode:   "live",
 	})
 
 	if err := env.GetWorkflowError(); err != nil {
@@ -342,7 +337,6 @@ func TestConcurrentPrepareCallsCreateOnlyOneProposal(t *testing.T) {
 	env.ExecuteWorkflow(AgentWorkflow, Input{
 		Prompt:          "Send ₦1 to Ayomide",
 		Model:           "parallel-reads",
-		Mode:            "live",
 		ApprovalSeconds: 1,
 	})
 

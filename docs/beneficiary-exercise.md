@@ -49,7 +49,8 @@ The stable key comes from workflow/Activity identity. The service validates agai
 
 ```bash
 gofmt -w internal/agent/beneficiary.go
-make restart-agent
+# Press Ctrl-C in the running agent terminal, then:
+make agent
 ```
 
 Use another terminal for CLI commands:
@@ -59,7 +60,7 @@ Use another terminal for CLI commands:
 ./bin/pay wait REQUEST_ID
 ./bin/pay ask 'Search beneficiaries for Ayo'
 ./bin/pay wait REQUEST_ID
-make exercise-check
+source scripts/env.sh && python3 scripts/exercise-check.py
 ```
 
 Expect phase `completed`, a dynamic Activity named `add_beneficiary`, one saved beneficiary and no payment approval. The acceptance check creates a unique simulated practice beneficiary so it can verify the handler even after earlier runs. Repeating the same bank/account returns the existing beneficiary; conflicting details are rejected.
@@ -85,8 +86,9 @@ The [complete replacement file](solutions/beneficiary.go.txt) is the reference. 
 ```bash
 cp internal/agent/beneficiary.go .local/beneficiary-progress.go.txt
 cp docs/solutions/beneficiary.go.txt internal/agent/beneficiary.go
-make restart-agent
-make exercise-check
+# Press Ctrl-C in the running agent terminal, then:
+make agent
+source scripts/env.sh && python3 scripts/exercise-check.py
 ```
 
-`make solution-check` compiles this exact reference in a temporary copy and verifies it using real services without editing your working file. The presenter prepares a completed copy before the event. Participants who finish early can explore the written notification and scheduling practices.
+`make check` compiles this exact reference in a temporary copy and verifies it using real services without editing your working file. The presenter prepares a completed copy before the event. Participants who finish early can explore the written notification and scheduling practices.

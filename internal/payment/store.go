@@ -88,7 +88,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return tx.Commit(ctx)
 }
 
-func (s *Store) Seed(ctx context.Context, presenter bool) error {
+func (s *Store) Seed(ctx context.Context) error {
 	if _, err := s.Pool.Exec(ctx, `INSERT INTO accounts VALUES ('demo',10000000) ON CONFLICT DO NOTHING`); err != nil {
 		return err
 	}
@@ -105,16 +105,6 @@ func (s *Store) Seed(ctx context.Context, presenter bool) error {
 		if _, err := s.Add(ctx, "seed/"+b.Name, b); err != nil {
 			return err
 		}
-	}
-
-	if presenter {
-		_, err := s.Add(ctx, "seed/Ayomide", domain.AddBeneficiary{
-			Name:          "Ayomide",
-			BankCode:      "058",
-			AccountNumber: "0123454821",
-		})
-
-		return err
 	}
 
 	return nil

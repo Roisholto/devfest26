@@ -36,9 +36,8 @@ try {
   writeFileSync('dist/layout-check.json', JSON.stringify(layout, null, 2));
   if (layout.some(s => s.overflow)) throw new Error('Slide overflow detected: ' + JSON.stringify(layout.filter(s => s.overflow)));
   await page.screenshot({ path: 'dist/title-slide.png' });
-  for (const instance of ['presenter', 'participant']) {
-    const dir = path.resolve('dist/fallback', instance);
-    if (!existsSync(path.join(dir, 'index.html'))) continue;
+  const dir = path.resolve('dist/fallback');
+  if (existsSync(path.join(dir, 'index.html'))) {
     await page.goto(pathToFileURL(path.join(dir, 'index.html')).href, { waitUntil: 'networkidle0' });
     for (const name of ['opening', 'restart', 'lost-response']) {
       await page.evaluate(name => document.getElementById(name).scrollIntoView(), name);

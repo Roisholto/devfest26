@@ -63,7 +63,7 @@ func testStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 
-	if err = s.Seed(ctx, true); err != nil {
+	if err = s.Seed(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -138,7 +138,7 @@ func TestConcurrentBeneficiaryCreationAndConflict(t *testing.T) {
 func TestConcurrentPaymentIsOneDebit(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
-	bs, _ := s.List(ctx, "Ayomide")
+	bs, _ := s.List(ctx, "John")
 	in := domain.SubmitTransfer{
 		Key:           "one-payment",
 		BeneficiaryID: bs[0].ID,
@@ -180,7 +180,7 @@ func TestConcurrentPaymentIsOneDebit(t *testing.T) {
 func TestConcurrentWithdrawalsCannotOverspend(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
-	bs, _ := s.List(ctx, "Ayomide")
+	bs, _ := s.List(ctx, "John")
 
 	var wg sync.WaitGroup
 
@@ -239,7 +239,7 @@ func TestLostResponseAndDirectHTTPValidation(t *testing.T) {
 		t.Fatal("invalid operation mutated data")
 	}
 
-	bs, _ := s.List(ctx, "Ayomide")
+	bs, _ := s.List(ctx, "John")
 	in := domain.SubmitTransfer{
 		Key:           "lost",
 		BeneficiaryID: bs[0].ID,

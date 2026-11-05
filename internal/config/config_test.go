@@ -23,9 +23,9 @@ func unset(t *testing.T, key string) {
 func TestDotEnvLoadsDatabaseURLWithoutOverridingProcess(t *testing.T) {
 	unset(t, "DATABASE_URL")
 	unset(t, "PAYMENT_DATABASE_URL")
-	t.Setenv("MODEL_MODE", "scripted")
+	t.Setenv("GEMINI_MODEL", "exported-model")
 	p := filepath.Join(t.TempDir(), ".env")
-	data := "DATABASE_URL='postgres://demo:quoted%24password@localhost/example?sslmode=disable&connect_timeout=3'\nMODEL_MODE=live\nHOME=/must-not-change\n"
+	data := "DATABASE_URL='postgres://demo:quoted%24password@localhost/example?sslmode=disable&connect_timeout=3'\nGEMINI_MODEL=file-model\nHOME=/must-not-change\n"
 
 	if err := os.WriteFile(p, []byte(data), 0600); err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestDotEnvLoadsDatabaseURLWithoutOverridingProcess(t *testing.T) {
 		t.Fatal("DATABASE_URL not loaded exactly")
 	}
 
-	if Load().Mode != "scripted" || os.Getenv("HOME") != home {
+	if Load().Model != "exported-model" || os.Getenv("HOME") != home {
 		t.Fatal("dotenv overrode process/system environment")
 	}
 
@@ -71,11 +71,9 @@ func TestDatabaseURLPrecedenceAndLegacyFallback(t *testing.T) {
 	}
 
 	t.Setenv("PAYMENT_DATABASE_URL", "")
-	t.Setenv("WORKSHOP_INSTANCE", "presenter")
-	t.Setenv("PG_WORKSHOP_PORT", "55433")
 
-	if Load().DSN != "postgres://devfest26_presenter@127.0.0.1:55433/devfest26_presenter?sslmode=disable" {
-		t.Fatal("managed database default is inconsistent")
+	if Load().DSN != "" {
+		t.Fatal("database configuration must be explicit")
 	}
 }
 
@@ -97,20 +95,13 @@ func TestMissingAndMalformedDotEnv(t *testing.T) {
 	}
 }
 
-func TestQueuesAreFixedByInstanceAndCanBeIsolatedForVerification(t *testing.T) {
+func TestWorkshopQueueAndVerificationIsolation(t *testing.T) {
 	t.Setenv("TEMPORAL_TASK_QUEUE", "")
-	t.Setenv("WORKSHOP_INSTANCE", "participant")
 
-	participant := Load()
+	workshop := Load()
 
-	if participant.Queue != "devfest26-participant" || participant.Prefix != participant.Queue {
-		t.Fatalf("unexpected participant queue: %s", participant.Queue)
-	}
-
-	t.Setenv("WORKSHOP_INSTANCE", "presenter")
-
-	if Load().Queue != "devfest26-presenter" {
-		t.Fatal("presenter must use its own fixed queue")
+	if workshop.Queue != "devfest26-workshop" || workshop.Prefix != workshop.Queue {
+		t.Fatalf("unexpected workshop queue: %s", workshop.Queue)
 	}
 
 	t.Setenv("TEMPORAL_TASK_QUEUE", "devfest26-check-isolated")

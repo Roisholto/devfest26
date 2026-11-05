@@ -21,7 +21,6 @@ import (
 type Input struct {
 	Prompt          string `json:"prompt"`
 	Model           string `json:"model"`
-	Mode            string `json:"mode"`
 	Scenario        string `json:"scenario"`
 	ApprovalSeconds int    `json:"approval_seconds,omitempty"`
 }
@@ -31,7 +30,7 @@ type Decision struct {
 }
 type State struct {
 	Phase     string           `json:"phase"`
-	Mode      string           `json:"mode"`
+	Model     string           `json:"model"`
 	Answer    string           `json:"answer,omitempty"`
 	Proposal  *domain.Proposal `json:"proposal,omitempty"`
 	ExpiresAt time.Time        `json:"expires_at,omitzero"`
@@ -60,7 +59,7 @@ const instruction = `You are a simulated NGN payment assistant. Only call the pr
 func AgentWorkflow(ctx workflow.Context, in Input) (State, error) {
 	s := State{
 		Phase: "reasoning",
-		Mode:  in.Mode,
+		Model: in.Model,
 		Tools: []string{},
 	}
 

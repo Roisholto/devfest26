@@ -13,8 +13,8 @@ import (
 	"google.golang.org/genai"
 )
 
-// ScriptedModel is a labelled offline demonstration, not a general language
-// model. It runs behind the same InvokeModel Activity and ADK tool loop.
+// ScriptedModel is a deterministic unit-test fixture. It is never registered
+// by the workshop worker or selectable through application configuration.
 type ScriptedModel struct{}
 
 func (ScriptedModel) Name() string { return "scripted" }
@@ -48,7 +48,7 @@ func (ScriptedModel) GenerateContent(_ context.Context, req *model.LLMRequest, _
 			}
 		}
 
-		text := func(s string) { yield(googleadk.TextResponse("[SCRIPTED] "+s), nil) }
+		text := func(s string) { yield(googleadk.TextResponse("[TEST MODEL] "+s), nil) }
 		call := func(name string, args map[string]any) {
 			yield(googleadk.FunctionCallResponse("call-"+fmt.Sprint(len(results)+1), name, args), nil)
 		}

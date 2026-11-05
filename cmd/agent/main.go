@@ -35,14 +35,6 @@ func run() error {
 
 	cfg := config.Load()
 
-	if cfg.Instance != "participant" && cfg.Instance != "presenter" {
-		return fmt.Errorf("WORKSHOP_INSTANCE must be presenter or participant")
-	}
-
-	if cfg.Mode != "live" && cfg.Mode != "scripted" {
-		return fmt.Errorf("MODEL_MODE must be live or scripted")
-	}
-
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "preflight":
@@ -56,6 +48,10 @@ func run() error {
 		default:
 			return fmt.Errorf("usage: agent [preflight|replay WORKFLOW_ID [history-output.json]]")
 		}
+	}
+
+	if (len(os.Args) == 1 || os.Args[1] != "replay") && os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("GOOGLE_API_KEY") == "" {
+		return fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY is required")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -97,30 +93,24 @@ func run() error {
 				return err
 			}
 
-			if cfg.Mode == "live" {
-				if os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("GOOGLE_API_KEY") == "" {
-					return fmt.Errorf("live mode needs GEMINI_API_KEY or GOOGLE_API_KEY")
-				}
+			llm, err := agent.NewGemini(checkCtx, cfg.Model)
 
-				llm, err := agent.NewGemini(checkCtx, cfg.Model)
+			if err != nil {
+				return err
+			}
 
+			for _, err := range llm.GenerateContent(checkCtx, &model.LLMRequest{
+				Model: cfg.Model,
+				Contents: []*genai.Content{
+					genai.NewContentFromText("Reply with OK", genai.RoleUser),
+				},
+			}, false) {
 				if err != nil {
-					return err
-				}
-
-				for _, err := range llm.GenerateContent(checkCtx, &model.LLMRequest{
-					Model: cfg.Model,
-					Contents: []*genai.Content{
-						genai.NewContentFromText("Reply with OK", genai.RoleUser),
-					},
-				}, false) {
-					if err != nil {
-						return fmt.Errorf("live Gemini preflight: %w", err)
-					}
+					return fmt.Errorf("Gemini preflight: %w", err)
 				}
 			}
 
-			fmt.Printf("AGENT READY instance=%s mode=%s queue=%s\n", cfg.Instance, cfg.Mode, cfg.Queue)
+			fmt.Printf("AGENT READY model=%s queue=%s\n", cfg.Model, cfg.Queue)
 
 			return nil
 		}
@@ -144,7 +134,7 @@ func run() error {
 		Payment:  httpx.NewClient("http://" + cfg.Payment),
 	}
 
-	slog.Info("agent ready", "queue", cfg.Queue, "mode", cfg.Mode)
+	slog.Info("agent ready", "queue", cfg.Queue, "model", cfg.Model)
 
 	return httpx.Serve(ctx, cfg.API, server.Handler())
 }

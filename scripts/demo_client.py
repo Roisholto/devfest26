@@ -6,9 +6,8 @@ import urllib.request
 import urllib.error
 import uuid
 
-INSTANCE = os.environ.get("WORKSHOP_INSTANCE", "participant")
-API = "http://" + os.environ.get("API_ADDRESS", "127.0.0.1:8080" if INSTANCE == "presenter" else "127.0.0.1:8090")
-PAYMENT = "http://" + os.environ.get("PAYMENT_ADDRESS", "127.0.0.1:8081" if INSTANCE == "presenter" else "127.0.0.1:8091")
+API = "http://" + os.environ.get("API_ADDRESS", "127.0.0.1:8090")
+PAYMENT = "http://" + os.environ.get("PAYMENT_ADDRESS", "127.0.0.1:8091")
 
 def request(method, path, body=None, key=None, base=API):
     data = None if body is None else json.dumps(body).encode()

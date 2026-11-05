@@ -40,7 +40,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 
-		httpx.JSON(w, 200, map[string]any{"status": "ready", "instance": s.Config.Instance, "model_mode": s.Config.Mode})
+		httpx.JSON(w, 200, map[string]any{"status": "ready", "model": s.Config.Model})
 	})
 	m.HandleFunc("POST /requests", s.submit)
 	m.HandleFunc("GET /requests/{id}", s.state)
@@ -94,11 +94,6 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 
 	id := s.Config.Prefix + "-" + domain.Fingerprint(key)[:24]
 	hash := domain.Fingerprint(in)
-	model := s.Config.Model
-
-	if s.Config.Mode == "scripted" {
-		model = "scripted"
-	}
 
 	_, err := s.Temporal.ExecuteWorkflow(r.Context(), client.StartWorkflowOptions{
 		ID:                                       id,
@@ -108,8 +103,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 		Memo:                                     map[string]any{"request_fingerprint": hash},
 	}, agent.AgentWorkflow, agent.Input{
 		Prompt:          in.Prompt,
-		Model:           model,
-		Mode:            s.Config.Mode,
+		Model:           s.Config.Model,
 		Scenario:        in.Scenario,
 		ApprovalSeconds: in.ApprovalSeconds,
 	})
@@ -146,7 +140,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.JSON(w, 202, map[string]any{"request_id": id, "workflow_id": id, "model_mode": s.Config.Mode})
+	httpx.JSON(w, 202, map[string]any{"request_id": id, "workflow_id": id, "model": s.Config.Model})
 }
 
 func (s *Server) validID(id string) bool { return strings.HasPrefix(id, s.Config.Prefix+"-") }

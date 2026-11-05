@@ -18,12 +18,6 @@ import (
 // The returned function stops polling and releases the ADK Activity resources.
 func StartWorker(c client.Client, cfg config.Config) (func(), error) {
 	factories := map[string]googleadk.ModelFactory{
-		"scripted": func(context.Context, string) (model.LLM, error) {
-			return AuditedModel{
-				Inner: ScriptedModel{},
-				Path:  cfg.Audit,
-			}, nil
-		},
 		cfg.Model: func(ctx context.Context, name string) (model.LLM, error) {
 			llm, err := NewGemini(ctx, name)
 

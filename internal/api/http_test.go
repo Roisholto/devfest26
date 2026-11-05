@@ -23,12 +23,12 @@ import (
 func TestApprovalRequiresExplicitBoolean(t *testing.T) {
 	s := &Server{
 		Config: config.Config{
-			Prefix: "devfest26-participant",
+			Prefix: "devfest26-workshop",
 		},
 	}
 
 	for _, body := range []string{`{"proposal_id":"one"}`, `{"proposal_id":"one","approve":"yes"}`, `{"proposal_id":"one","approve":null}`, `{"approve":true}`, `{"proposal_id":"one","approve":true,"amount":10}`} {
-		r := httptest.NewRequest("POST", "/requests/devfest26-participant-test/decision", strings.NewReader(body))
+		r := httptest.NewRequest("POST", "/requests/devfest26-workshop-test/decision", strings.NewReader(body))
 		r.Header.Set("Idempotency-Key", "test")
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, r)
@@ -64,8 +64,7 @@ func TestDuplicateRequestSurfacesConflictAndComparesPayload(t *testing.T) {
 		s := &Server{
 			Temporal: c,
 			Config: config.Config{
-				Prefix: "devfest26-participant",
-				Mode:   "scripted",
+				Prefix: "devfest26-workshop",
 			},
 		}
 		r := httptest.NewRequest("POST", "/requests", strings.NewReader(`{"prompt":"Send ₦100 to Ayomide"}`)).WithContext(context.Background())
@@ -89,10 +88,10 @@ func TestDuplicateRequestSurfacesConflictAndComparesPayload(t *testing.T) {
 func TestEnvironmentIsolation(t *testing.T) {
 	s := &Server{
 		Config: config.Config{
-			Prefix: "devfest26-participant",
+			Prefix: "devfest26-workshop",
 		},
 	}
-	r := httptest.NewRequest("GET", "/requests/devfest26-presenter-other", nil)
+	r := httptest.NewRequest("GET", "/requests/another-workshop-other", nil)
 	w := httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, r)
 
@@ -114,7 +113,7 @@ func TestReusedUpdateIDCannotHideChangedDecision(t *testing.T) {
 		s := &Server{
 			Temporal: c,
 			Config: config.Config{
-				Prefix: "devfest26-participant",
+				Prefix: "devfest26-workshop",
 			},
 		}
 		body := `{"proposal_id":"one","approve":true}`
@@ -123,7 +122,7 @@ func TestReusedUpdateIDCannotHideChangedDecision(t *testing.T) {
 			body = `{"proposal_id":"one","approve":false}`
 		}
 
-		r := httptest.NewRequest("POST", "/requests/devfest26-participant-test/decision", strings.NewReader(body))
+		r := httptest.NewRequest("POST", "/requests/devfest26-workshop-test/decision", strings.NewReader(body))
 		r.Header.Set("Idempotency-Key", "reused-update-id")
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, r)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Verify the real two-process demo using an isolated PostgreSQL schema.
 
-make demo-check tests the starter; make solution-check compiles the written
-one-file solution in a temporary directory; make live-check also uses Gemini.
+Run make check to compile the written one-file solution in a temporary
+copy and exercise actual Gemini, Temporal and PostgreSQL boundaries.
 Requires the existing PostgreSQL and Temporal services, without resetting data.
 """
 import argparse
@@ -14,7 +14,6 @@ import shutil
 import signal
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.parse
@@ -29,11 +28,9 @@ def free_address():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--live", action="store_true", help="use actual Gemini inference")
     parser.add_argument("--solution", action="store_true", help="compile the supplied exercise solution in isolation")
     options = parser.parse_args()
-    mode = "live" if options.live else "scripted"
-    if options.live and not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
         raise SystemExit("Set GEMINI_API_KEY or GOOGLE_API_KEY in .env first")
     dsn = os.environ["PAYMENT_DATABASE_URL"]
     parsed = urllib.parse.urlsplit(dsn)
@@ -84,7 +81,6 @@ def main():
     query.append(("search_path", schema))
     scoped_dsn = urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
     env = {**original, "DATABASE_URL": scoped_dsn, "PAYMENT_DATABASE_URL": scoped_dsn,
-           "MODEL_MODE": mode, "WORKSHOP_INSTANCE": "participant",
            "TEMPORAL_TASK_QUEUE": "devfest26-check-" + run_id,
            "API_ADDRESS": free_address(), "PAYMENT_ADDRESS": free_address(),
            "MODEL_AUDIT_PATH": str(audit)}
@@ -100,8 +96,8 @@ def main():
     passed = False
     # Some Flash projects have five requests/minute; one agent turn can make
     # several model calls. Leave a full quota window between user requests.
-    # Set LIVE_CHECK_PAUSE_SECONDS=0 only with sufficient project quota.
-    pause = float(os.environ.get("LIVE_CHECK_PAUSE_SECONDS", "65")) if options.live else 0
+    # Set CHECK_PAUSE_SECONDS=0 only with sufficient project quota.
+    pause = float(os.environ.get("CHECK_PAUSE_SECONDS", "65"))
     next_request = 0
 
     def paced_ask(prompt, scenario="success"):
@@ -143,7 +139,7 @@ def main():
         state = paced_wait(rid)
         if state["phase"] in ("completed", "error"):
             histories.append(rid)
-        check(mode + " response: " + prompt, state["mode"] == mode and state["phase"] != "error")
+        check("Gemini response: " + prompt, state["model"] == env.get("GEMINI_MODEL", "gemini-3.6-flash") and state["phase"] != "error")
         return rid, state
 
     def invocations(rid):
@@ -171,7 +167,7 @@ def main():
                 break
             except (OSError, TimeoutError):
                 if time.monotonic() >= deadline or any(p.poll() is not None for p in processes):
-                    raise RuntimeError("live-check services failed to start")
+                    raise RuntimeError("verification services failed to start")
                 time.sleep(0.2)
 
         before = evidence()
@@ -191,7 +187,7 @@ def main():
             invalid = paced_wait(invalid_id)
             histories.append(invalid_id)
             validation_response = invalid["phase"] == "completed" or (invalid["phase"] == "error" and "account_number" in invalid.get("error", ""))
-            check("nine-digit account is rejected without mutation", invalid["mode"] == mode and validation_response and invalid.get("proposal") is None and evidence() == before)
+            check("nine-digit account is rejected without mutation", invalid["model"] == env.get("GEMINI_MODEL", "gemini-3.6-flash") and validation_response and invalid.get("proposal") is None and evidence() == before)
         else:
             check("starter reads require no beneficiary exercise completion", "add_beneficiary" not in listing["tools"])
 
@@ -233,13 +229,11 @@ def main():
         before = evidence()
         _, last = invoke("Check my last transfer and retry it if it failed")
         check("successful last transfer is not replaced", last["phase"] == "completed" and "get_last_transfer" in last["tools"] and evidence() == before)
-        if options.solution and not options.live:
-            subprocess.run([sys.executable, "scripts/exercise-check.py"], env=env, check=True)
-            check("participant acceptance command passes with the written solution", True)
+
         for rid in histories:
             command("agent", "replay", rid)
         check("all " + str(len(histories)) + " workflow histories replay without model calls", True)
-        (out / "result.json").write_text(json.dumps({"model": env.get("GEMINI_MODEL"), "mode": mode, "solution": options.solution, "checks": results, "histories": histories}, indent=2))
+        (out / "result.json").write_text(json.dumps({"model": env.get("GEMINI_MODEL", "gemini-3.6-flash"), "solution": options.solution, "checks": results, "histories": histories}, indent=2))
         passed = True
         print("Verification saved to", out / "result.json", flush=True)
     finally:
@@ -249,7 +243,7 @@ def main():
             for rid in workflow_ids:
                 try:
                     subprocess.run(["temporal", "workflow", "terminate", "--workflow-id", rid,
-                                    "--reason", "Isolated live-check cleanup", "--address",
+                                    "--reason", "Isolated verification cleanup", "--address",
                                     env.get("TEMPORAL_ADDRESS", "127.0.0.1:7233")],
                                    capture_output=True, timeout=15)
                 except (OSError, subprocess.TimeoutExpired):
