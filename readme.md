@@ -151,15 +151,16 @@ Basic familiarity with APIs and backend development will be useful. Prior experi
 
 ### Workshop Implementation
 
-The implementation uses **Go 1.27.3**, Google ADK/Gemini, Temporal, and a simulated **Go/PostgreSQL 17** payment service. Participants extend a working reference application by implementing beneficiary creation, then inspect approval and failure recovery. Listing/search are supplied before the exercise. All model tool calls use native Temporal Dynamic Activities.
+The implementation uses **Go 1.27.3**, Google ADK/Gemini, Temporal, and a simulated **Go/PostgreSQL 17** payment service. Participants stay on `main`, edit only `internal/agent/beneficiary.go`, then inspect approval and failure recovery. The agent API and Temporal worker share one Go process; the payment service is the second. Listing/search are supplied before the exercise. All model tool calls use native Temporal Dynamic Activities.
 
 - [Setup and commands](docs/setup.md)
 - [Ten-minute beneficiary exercise and complete code](docs/beneficiary-exercise.md)
-- [Checkpoint branches](docs/branches.md)
 - [Presenter runbook](docs/presenter.md)
 - [Architecture, validation, and REST interfaces](docs/architecture.md)
 - [Marp deck and speaker notes](slides/workshop.md)
-- [Follow-up: payment notifications](docs/practice-notifications.md)
-- [Follow-up: scheduled transfers](docs/practice-scheduled-transfers.md)
+- [Written follow-up: payment notifications](docs/practice-notifications.md)
+- [Written follow-up: scheduled transfers](docs/practice-scheduled-transfers.md)
 
 For this fixed-account local demo, authentication infrastructure is omitted. Validation, allowed-tool policy, PostgreSQL idempotency, and explicit payment confirmation remain enforced. Adding a beneficiary needs no additional confirmation. Reliable completion includes definitive failure or explicitly unresolved status; it does not guarantee payment success.
+
+The starter already lists/searches beneficiaries and sends approved payments to seeded recipients. Complete beneficiary creation with the one-file guide or its supplied replacement file. Use `make restart-agent` after editing; there are no checkpoint settings or branch switches.

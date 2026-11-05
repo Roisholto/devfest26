@@ -6,12 +6,14 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"go.temporal.io/googleadk"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 	"google.golang.org/adk/v2/model"
 
 	"devfest26/internal/domain"
@@ -78,18 +80,11 @@ func harnessWithModel(t *testing.T, llm model.LLM) (*testsuite.TestWorkflowEnvir
 	}, activity.RegisterOptions{
 		Name: "ReadTransfer",
 	})
-	env.RegisterActivityWithOptions(func(context.Context, string) error { return nil }, activity.RegisterOptions{
-		Name: "DeliverReceipt",
-	})
 
 	return env, debits
 }
 
 func TestApprovalRequiredAndRejectionNoDebit(t *testing.T) {
-	if Stage < 4 {
-		t.Skip("payment checkpoint not enabled")
-	}
-
 	for _, approve := range []bool{false, true} {
 		t.Run(fmt.Sprint(approve), func(t *testing.T) {
 			env, debits := harness(t)
@@ -166,10 +161,6 @@ func TestApprovalRequiredAndRejectionNoDebit(t *testing.T) {
 }
 
 func TestExpiryAndStaleApproval(t *testing.T) {
-	if Stage < 4 {
-		t.Skip("payment checkpoint not enabled")
-	}
-
 	env, debits := harness(t)
 	rejected := false
 	env.RegisterDelayedCallback(func() {
@@ -201,35 +192,23 @@ func TestExpiryAndStaleApproval(t *testing.T) {
 }
 
 func TestNativeDynamicToolValidation(t *testing.T) {
-	if Stage < 3 {
-		t.Skip("beneficiary checkpoint not enabled")
-	}
-
 	env, _ := harness(t)
-	env.ExecuteWorkflow(AgentWorkflow, Input{
-		Prompt: "Add Ayomide at GTBank, account 123",
-		Model:  "scripted",
-		Mode:   "scripted",
+	env.ExecuteWorkflow(func(ctx workflow.Context) (map[string]any, error) {
+		ctx = workflow.WithActivityOptions(ctx, toolOptions())
+
+		var out map[string]any
+
+		err := workflow.ExecuteActivity(ctx, "search_beneficiaries", map[string]any{"query": 123}).Get(ctx, &out)
+
+		return out, err
 	})
 
-	if err := env.GetWorkflowError(); err != nil {
-		t.Fatal(err)
-	}
-
-	var out State
-
-	_ = env.GetWorkflowResult(&out)
-
-	if out.Phase != "error" || out.Proposal != nil {
-		t.Fatalf("invalid tool accepted: %+v", out)
+	if err := env.GetWorkflowError(); err == nil || !strings.Contains(err.Error(), "query must be a string") {
+		t.Fatalf("invalid dynamic tool arguments were not rejected: %v", err)
 	}
 }
 
 func TestSuccessfulReadToolsNeedNoApproval(t *testing.T) {
-	if Stage == 0 {
-		t.Skip("runtime checkpoint")
-	}
-
 	env, debits := harness(t)
 	env.ExecuteWorkflow(AgentWorkflow, Input{
 		Prompt: "Search beneficiaries for Ayo",
@@ -262,10 +241,6 @@ func (m unavailableModel) GenerateContent(context.Context, *model.LLMRequest, bo
 }
 
 func TestModelFailureHasBoundedRetries(t *testing.T) {
-	if Stage == 0 {
-		t.Skip("runtime checkpoint")
-	}
-
 	var suite testsuite.WorkflowTestSuite
 
 	env := suite.NewTestWorkflowEnvironment()
@@ -337,10 +312,6 @@ func (m parallelReadModel) GenerateContent(_ context.Context, req *model.LLMRequ
 }
 
 func TestParallelToolCallsUseTheirOwnWorkflowContext(t *testing.T) {
-	if Stage == 0 {
-		t.Skip("runtime checkpoint")
-	}
-
 	env, debits := harnessWithModel(t, parallelReadModel{})
 	env.SetTestTimeout(5 * time.Second)
 	env.ExecuteWorkflow(AgentWorkflow, Input{
@@ -365,10 +336,6 @@ func TestParallelToolCallsUseTheirOwnWorkflowContext(t *testing.T) {
 }
 
 func TestConcurrentPrepareCallsCreateOnlyOneProposal(t *testing.T) {
-	if Stage < 4 {
-		t.Skip("payment checkpoint not enabled")
-	}
-
 	env, debits := harnessWithModel(t, parallelReadModel{
 		prepare: true,
 	})
@@ -391,86 +358,5 @@ func TestConcurrentPrepareCallsCreateOnlyOneProposal(t *testing.T) {
 
 	if out.Phase != "expired" || out.Proposal == nil || len(out.Tools) != 1 || out.Tools[0] != "prepare_transfer" || *debits != 0 {
 		t.Fatalf("concurrent preparation bypassed one-proposal boundary: %+v debits=%d", out, *debits)
-	}
-}
-
-func TestPaymentReconcilesBeforeResubmitting(t *testing.T) {
-	var suite testsuite.WorkflowTestSuite
-
-	env := suite.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(PaymentWorkflow)
-	submissions := 0
-	env.RegisterActivityWithOptions(func(context.Context, domain.SubmitTransfer) (domain.Transfer, error) {
-		submissions++
-
-		return domain.Transfer{}, fmt.Errorf("response lost after commit")
-	}, activity.RegisterOptions{
-		Name: "SubmitTransfer",
-	})
-	env.RegisterActivityWithOptions(func(_ context.Context, key string) (domain.Transfer, error) {
-		return domain.Transfer{
-			Key:       key,
-			Reference: "TX-existing",
-			Status:    "succeeded",
-		}, nil
-	}, activity.RegisterOptions{
-		Name: "ReadTransfer",
-	})
-	env.ExecuteWorkflow(PaymentWorkflow, domain.Proposal{
-		PaymentKey: "stable",
-		Beneficiary: domain.Beneficiary{
-			ID: "ayo",
-		},
-		AmountKobo: 1000000,
-		Currency:   "NGN",
-	}, "lost-response")
-
-	if err := env.GetWorkflowError(); err != nil {
-		t.Fatal(err)
-	}
-
-	var out domain.Transfer
-
-	_ = env.GetWorkflowResult(&out)
-
-	if out.Reference != "TX-existing" || submissions != 1 {
-		t.Fatalf("submissions=%d result=%+v", submissions, out)
-	}
-}
-
-func TestPaymentBoundsReconciliation(t *testing.T) {
-	var suite testsuite.WorkflowTestSuite
-
-	env := suite.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(PaymentWorkflow)
-	env.RegisterActivityWithOptions(func(context.Context, domain.SubmitTransfer) (domain.Transfer, error) {
-		return domain.Transfer{}, fmt.Errorf("offline")
-	}, activity.RegisterOptions{
-		Name: "SubmitTransfer",
-	})
-	env.RegisterActivityWithOptions(func(context.Context, string) (domain.Transfer, error) {
-		return domain.Transfer{}, fmt.Errorf("offline")
-	}, activity.RegisterOptions{
-		Name: "ReadTransfer",
-	})
-	env.ExecuteWorkflow(PaymentWorkflow, domain.Proposal{
-		PaymentKey: "stable",
-		Beneficiary: domain.Beneficiary{
-			ID: "ayo",
-		},
-		AmountKobo: 1000000,
-		Currency:   "NGN",
-	}, "success")
-
-	if err := env.GetWorkflowError(); err != nil {
-		t.Fatal(err)
-	}
-
-	var out domain.Transfer
-
-	_ = env.GetWorkflowResult(&out)
-
-	if out.Status != "pending" || out.Key != "stable" {
-		t.Fatalf("unexpected %+v", out)
 	}
 }

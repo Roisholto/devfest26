@@ -14,7 +14,6 @@ if [ -f .env ]; then
 fi
 export WORKSHOP_INSTANCE="${WORKSHOP_INSTANCE:-participant}"
 case "$WORKSHOP_INSTANCE" in presenter|participant) ;; *) echo 'Choose presenter or participant' >&2; return 1 2>/dev/null || exit 1;; esac
-export WORKSHOP_CHECKPOINT="${WORKSHOP_CHECKPOINT:-$(git branch --show-current | tr '/' '-')}"
 export MODEL_MODE="${MODEL_MODE:-scripted}"
 export GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.6-flash}"
 export PG_WORKSHOP_PORT="${PG_WORKSHOP_PORT:-55432}"

@@ -1,25 +1,32 @@
-# Ten-minute exercise: add Ayomide
+# Ten-minute exercise: one file, one new tool
 
-Start on `workshop/02-beneficiary-exercise`. Listing, case-insensitive beneficiary search, the native dynamic dispatcher, service validation, PostgreSQL persistence and the typed HTTP client are already supplied.
+Stay on `main`. Listing, search, balance, approved payments and recovery already work. John and Zainab are seeded, so the core demo does not depend on finishing this exercise.
 
-```bash
-git switch -c my-beneficiary workshop/02-beneficiary-exercise
-source scripts/env.sh
-make build
-make preflight
-make start
-```
+Edit **only `internal/agent/beneficiary.go`**. It contains two TODOs: the tool declaration and the typed handler. No branch switching, checkpoint settings, worker registration or database work is required.
 
-In a second terminal source the same environment. Before coding, `List my beneficiaries` and `Search beneficiaries for Ayo` work; Ayomide is absent in a fresh participant database. `add_beneficiary` is the missing tool. Preserve any existing participant data; the exercise also works if Ayomide was added on an earlier run.
+## Minutes 0–3: advertise the tool
 
-## Minutes 0–3: implement the handler
-
-Edit `internal/agent/beneficiary.go`. The supplied `AddBeneficiary` argument type has `Name`, `BankCode`, and **string** `AccountNumber`. Validate before calling the service:
+Replace the empty `beneficiaryTools` slice with:
 
 ```go
-func (r *Router) AddBeneficiary(
-    ctx context.Context, key string, in domain.AddBeneficiary,
-) (map[string]any, error) {
+var beneficiaryTools = []Spec{
+    {
+        Name:        "add_beneficiary",
+        Description: "Save beneficiary details supplied by the user; no extra confirmation required.",
+        Fields:      []string{"name", "bank_code", "account_number"},
+        Required:    []string{"name", "bank_code", "account_number"},
+    },
+}
+```
+
+The supplied `Catalog()` appends this slice in a fixed order. The native Dynamic Activity dispatcher already routes the allowed name to `AddBeneficiary`. A catalog entry advertises the function to Gemini and allows the dispatcher to accept it; it does not register a static Activity.
+
+## Minutes 3–5: implement the handler
+
+Replace the placeholder method in the same file:
+
+```go
+func (r *Router) AddBeneficiary(ctx context.Context, key string, in domain.AddBeneficiary) (map[string]any, error) {
     if err := in.Validate(); err != nil {
         return nil, err
     }
@@ -34,76 +41,52 @@ func (r *Router) AddBeneficiary(
 }
 ```
 
-The key comes from workflow/Activity identity and is stable across Activity retries. The payment service validates again and the database enforces uniqueness. Your handler never asks for an additional yes/no confirmation.
+The stable key comes from workflow/Activity identity. The service validates again and PostgreSQL enforces uniqueness. The user's add instruction authorizes saving complete details; this tool does not require another approval prompt.
 
-## Minutes 3–5: publish the tool
+**Halfway hint:** both TODOs are in this one file. The model needs the declaration; the dispatcher needs the implementation.
 
-In `Catalog()` in `internal/agent/tools.go`, add this entry to the initial ordered `[]Spec`:
-
-```go
-{
-    Name: "add_beneficiary",
-    Description: "Save the complete beneficiary details supplied by the user; no extra confirmation required.",
-    Fields: []string{"name", "bank_code", "account_number"},
-    Required: []string{"name", "bank_code", "account_number"},
-},
-```
-
-The dispatcher already has the typed `add_beneficiary` case. Do **not** add `RegisterActivity` or register a function under that name. `RegisterDynamicActivity(router.Execute, ...)` is already the single worker registration for model tools. Adding to the catalog advertises the declaration to Gemini and admits that name through the allowlist.
-
-**Halfway hint:** the model needs the catalog entry to select the tool; the worker needs the handler to carry out the request. Both are necessary. Neither replaces payment-service validation.
-
-## Minutes 5–8: build and try it
-
-Stop the running services with Ctrl-C, then:
+## Minutes 5–8: run it
 
 ```bash
-gofmt -w internal/agent/beneficiary.go internal/agent/tools.go
-make build
-make start
+gofmt -w internal/agent/beneficiary.go
+make restart-agent
 ```
 
-In the CLI terminal:
+Use another terminal for CLI commands:
 
 ```bash
 ./bin/pay ask --key add-ayo-1 'Add Ayomide at GTBank, account 0123454821'
 ./bin/pay wait REQUEST_ID
-./bin/pay ask --key search-ayo-1 'Search beneficiaries for Ayo'
+./bin/pay ask 'Search beneficiaries for Ayo'
 ./bin/pay wait REQUEST_ID
 make exercise-check
 ```
 
-Expected: phase `completed`, `tools` contains `add_beneficiary`, no pending proposal/approval, a saved beneficiary with the leading zero preserved, and one dynamic Activity named `add_beneficiary` in Temporal's UI. The acceptance script repeats the addition, checks case-insensitive search and tests invalid inputs.
+Expect phase `completed`, a dynamic Activity named `add_beneficiary`, one saved beneficiary and no payment approval. The acceptance check creates a unique simulated practice beneficiary so it can verify the handler even after earlier runs. Repeating the same bank/account returns the existing beneficiary; conflicting details are rejected.
 
-## Minutes 8–10: inspect the boundaries
+## Minutes 8–10: inspect validation and make a proposal
 
-Valid account number: `"0123454821"`. Nine digits, whitespace, Unicode digits and numeric JSON values are invalid. Never pad or truncate an account number. Bank codes: `058` GTBank, `044` Access, `011` FirstBank. These are simulated details; formatting is not bank-account verification.
+Accounts are strings of **exactly ten ASCII digits**, including the leading zero. Nine/eleven digits, whitespace, Unicode digits and numeric JSON are invalid. Never pad or truncate an account number. Bank codes supplied for the demo are GTBank `058`, Access `044` and FirstBank `011`; format validation does not verify a real bank account.
 
-Call the payment service directly to prove it enforces the rule independently:
+A direct service request is validated independently:
 
 ```bash
-curl -i "http://$PAYMENT_ADDRESS/beneficiaries" \
+curl -i http://127.0.0.1:8091/beneficiaries \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: invalid-number' \
   -d '{"name":"Invalid","bank_code":"058","account_number":1234548210}'
 ```
 
-Expected HTTP 400 and unchanged evidence. Adding the same bank/account with different beneficiary details returns HTTP 409 rather than overwriting it. Identical additions return the saved record. An invalid operation has no mutation; rejecting a later payment does not undo a previously successful addition.
+Expect HTTP 400 with no mutation. Then ask `Send ₦100 to Ayomide`: preparing a proposal still cannot move money. Approve or reject through `bin/pay` to see the separate payment boundary.
 
-## Completion and recovery
+## Complete solution
 
-- Tool appears in the catalog.
-- A valid instruction saves one beneficiary.
-- Invalid account numbers fail.
-- Repeating the addition creates no duplicate.
-- Temporal shows the native dynamic tool Activity.
-
-Full code is in `workshop/03-beneficiary-solution`; the snippets above are also the solution. If behind, save your work first:
+The [complete replacement file](solutions/beneficiary.go.txt) is the reference. To use it, save your progress first:
 
 ```bash
-git add internal/agent/beneficiary.go internal/agent/tools.go
-git commit -m 'Save beneficiary practice progress'
-# Stop services, then use a new branch rather than discarding changes:
-git switch -c beneficiary-reference workshop/03-beneficiary-solution
+cp internal/agent/beneficiary.go .local/beneficiary-progress.go.txt
+cp docs/solutions/beneficiary.go.txt internal/agent/beneficiary.go
+make restart-agent
+make exercise-check
 ```
 
-Unset/re-source `WORKSHOP_CHECKPOINT` after switching, rebuild and restart. Continue to `workshop/04-approved-payments` or the completed `main` reference to send a payment to the beneficiary you added. The presenter uses an independent reference environment; you do not need to finish every checkpoint during the hour.
+`make solution-check` compiles this exact reference in a temporary copy and verifies it using real services without editing your working file. The presenter prepares a completed copy before the event. Participants who finish early can explore the written notification and scheduling practices.

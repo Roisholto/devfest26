@@ -8,18 +8,17 @@ import (
 )
 
 type Config struct {
-	Instance   string
-	Checkpoint string
-	API        string
-	Payment    string
-	DSN        string
-	Temporal   string
-	Queue      string
-	Prefix     string
-	Mode       string
-	Model      string
-	Audit      string
-	Limit      int64
+	Instance string
+	API      string
+	Payment  string
+	DSN      string
+	Temporal string
+	Queue    string
+	Prefix   string
+	Mode     string
+	Model    string
+	Audit    string
+	Limit    int64
 }
 
 func env(k, d string) string {
@@ -32,7 +31,6 @@ func env(k, d string) string {
 
 func Load() Config {
 	i := env("WORKSHOP_INSTANCE", "participant")
-	checkpoint := env("WORKSHOP_CHECKPOINT", "main")
 	api, pay := "127.0.0.1:8090", "127.0.0.1:8091"
 
 	if i == "presenter" {
@@ -47,22 +45,21 @@ func Load() Config {
 		}
 	}
 
-	prefix := i + "-" + checkpoint
+	prefix := env("TEMPORAL_TASK_QUEUE", "devfest26-"+i)
 	defaultDSN := "postgres://devfest26_" + i + "@127.0.0.1:" + env("PG_WORKSHOP_PORT", "55432") + "/devfest26_" + i + "?sslmode=disable"
 	dsn := env("DATABASE_URL", env("PAYMENT_DATABASE_URL", defaultDSN))
 
 	return Config{
-		Instance:   i,
-		Checkpoint: checkpoint,
-		API:        env("API_ADDRESS", api),
-		Payment:    env("PAYMENT_ADDRESS", pay),
-		DSN:        dsn,
-		Temporal:   env("TEMPORAL_ADDRESS", "127.0.0.1:7233"),
-		Queue:      prefix,
-		Prefix:     prefix,
-		Mode:       env("MODEL_MODE", "scripted"),
-		Model:      env("GEMINI_MODEL", "gemini-3.6-flash"),
-		Audit:      env("MODEL_AUDIT_PATH", ".local/"+i+"/model-invocations.jsonl"),
-		Limit:      limit,
+		Instance: i,
+		API:      env("API_ADDRESS", api),
+		Payment:  env("PAYMENT_ADDRESS", pay),
+		DSN:      dsn,
+		Temporal: env("TEMPORAL_ADDRESS", "127.0.0.1:7233"),
+		Queue:    prefix,
+		Prefix:   prefix,
+		Mode:     env("MODEL_MODE", "scripted"),
+		Model:    env("GEMINI_MODEL", "gemini-3.6-flash"),
+		Audit:    env("MODEL_AUDIT_PATH", ".local/"+i+"/model-invocations.jsonl"),
+		Limit:    limit,
 	}
 }

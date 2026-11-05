@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record real local demo results, including a real worker restart.
+"""Record real local demo results, including a real agent crash.
 
 Requires make start in another terminal, using the same sourced environment.
 It adds simulated transactions; no database reset is performed.
@@ -37,27 +37,24 @@ def invocation_counts(workflow_id):
     return dict(counts)
 
 record("MODE", request("GET", "/health"))
-add = wait(ask("Add Ayomide at GTBank, account 0123454821"))
-assert add["phase"] == "completed", add
-record("BENEFICIARY", add)
 
 def payment(scenario, restart=False):
     before = evidence()
-    rid = ask("Send ₦10,000 to Ayomide", scenario)
+    rid = ask("Send ₦10,000 to John", scenario)
     pending = wait(rid)
     assert pending["phase"] == "awaiting_approval", pending
     record("PROPOSAL " + rid, pending)
     counts_before = invocation_counts(rid)
     if restart:
-        pid_file = Path(f".local/{INSTANCE}/worker.pid")
+        pid_file = Path(f".local/{INSTANCE}/agent.pid")
         pid = int(pid_file.read_text())
         command = Path(f"/proc/{pid}/cmdline").read_bytes()
-        assert b"devfest" in command and b"worker" in command, "refuse to stop an unrelated process"
-        os.kill(pid, signal.SIGTERM)
+        assert b"devfest" in command and b"agent" in command, "refuse to stop an unrelated process"
+        os.kill(pid, signal.SIGKILL)
         time.sleep(2)
-        log = open(f".local/{INSTANCE}/worker-restarted.log", "ab", buffering=0)
-        worker = subprocess.Popen(["./bin/devfest", "worker"], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        pid_file.write_text(str(worker.pid))
+        log = open(f".local/{INSTANCE}/agent-restarted.log", "ab", buffering=0)
+        agent = subprocess.Popen(["./bin/devfest", "agent"], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        pid_file.write_text(str(agent.pid))
         recovered = wait(rid)
         assert recovered["proposal"] == pending["proposal"]
         assert invocation_counts(rid) == counts_before, "completed model calls were invoked again"
@@ -89,4 +86,4 @@ for name in ("opening", "restart", "lost-response"):
     cards.append(f'<section id="{name}"><h1>{name.replace("-", " ").title()}</h1><p>Recorded local run · {html.escape(INSTANCE)} · {html.escape(data["mode"])} mode</p><pre>{html.escape(json.dumps(summary, indent=2, ensure_ascii=False))}</pre><p>Full JSON and terminal recording are included alongside this page.</p></section>')
 page = '<!doctype html><meta charset="utf-8"><title>Recorded DevFest demo</title><style>body{margin:0;background:#f0f0f0;color:#202124;font:24px Arial}section{min-height:680px;box-sizing:border-box;padding:45px 65px;border-bottom:2px solid #222}h1{margin:0 0 15px;font-size:45px}pre{font:19px monospace;background:#ffe8a1;border:2px solid #222;border-radius:25px;padding:25px;white-space:pre-wrap}p{font-size:21px}</style>' + "".join(cards)
 (out / "index.html").write_text(page)
-print("PASS: opening, worker restart, one-debit lost-response reconciliation, and safe last-transfer lookup. Recorded artifacts:", out)
+print("PASS: opening, agent crash, one-debit lost-response reconciliation, and safe last-transfer lookup. Recorded artifacts:", out)

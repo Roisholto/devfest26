@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/url"
 	"strings"
-	"time"
 
 	"go.temporal.io/googleadk"
 	"go.temporal.io/sdk/activity"
@@ -34,7 +33,7 @@ type Spec struct {
 
 // Catalog is ordered: tool declaration order must remain stable during replay.
 func Catalog() []Spec {
-	s := []Spec{
+	specs := []Spec{
 		{
 			Name:        "list_beneficiaries",
 			Description: "List saved beneficiaries",
@@ -55,57 +54,31 @@ func Catalog() []Spec {
 			Name:        "check_balance",
 			Description: "Read available balance",
 		},
-	}
-
-	if Stage >= 3 {
-		s = append(s, Spec{
-			Name:        "add_beneficiary",
-			Description: "Save beneficiary details supplied in the user's add instruction. No extra confirmation required.",
-			Fields:      []string{"name", "bank_code", "account_number"},
-			Required:    []string{"name", "bank_code", "account_number"},
-		})
-	}
-
-	if Stage == 2 {
-		s = append(s, Spec{
-			Name:        "add_beneficiary",
-			Description: "EXERCISE: save a beneficiary supplied by the user",
-			Fields:      []string{"name", "bank_code", "account_number"},
-			Required:    []string{"name", "bank_code", "account_number"},
-		})
-	}
-
-	if Stage >= 4 {
-		fields := []string{"beneficiary_id", "amount_naira", "retry_of"}
-
-		if ScheduleEnabled {
-			fields = append(fields, "execute_at")
-		}
-
-		s = append(s, Spec{
+		{
 			Name:        "prepare_transfer",
 			Description: "Prepare one proposal. amount_naira is an exact decimal string without commas. retry_of is the reference of a definitively failed payment.",
-			Fields:      fields,
+			Fields:      []string{"beneficiary_id", "amount_naira", "retry_of"},
 			Required:    []string{"beneficiary_id", "amount_naira"},
-		}, Spec{
+		},
+		{
 			Name:        "get_transaction_status",
-			Description: "Read the authoritative status by reference or payment key",
+			Description: "Read authoritative status by reference or payment key",
 			Fields:      []string{"reference"},
 			Required:    []string{"reference"},
-		}, Spec{
+		},
+		{
 			Name:        "get_last_transfer",
 			Description: "Retrieve the most recently created transfer",
-		})
+		},
 	}
 
-	return s
+	return append(specs, beneficiaryTools...)
 }
 
 type PrepareArgs struct {
 	BeneficiaryID string `json:"beneficiary_id"`
 	Amount        string `json:"amount_naira"`
 	RetryOf       string `json:"retry_of,omitempty"`
-	ExecuteAt     string `json:"execute_at,omitempty"`
 }
 type Router struct {
 	Client *httpx.Client
@@ -322,18 +295,6 @@ func (r *Router) dispatch(ctx context.Context, name string, args converter.Encod
 			return nil, err
 		}
 
-		if in.ExecuteAt != "" {
-			if !ScheduleEnabled {
-				return nil, domain.Invalid("scheduled transfers are a follow-up lab")
-			}
-
-			due, err := time.Parse(time.RFC3339, in.ExecuteAt)
-
-			if err != nil || !due.After(time.Now()) {
-				return nil, domain.Invalid("execute_at must be a future RFC3339 timestamp with timezone")
-			}
-		}
-
 		var bs []domain.Beneficiary
 
 		if err = r.Client.Do(ctx, "GET", "/beneficiaries", "", nil, &bs); err != nil {
@@ -383,7 +344,6 @@ func (r *Router) dispatch(ctx context.Context, name string, args converter.Encod
 			AmountKobo:  n,
 			Currency:    "NGN",
 			PaymentKey:  info.WorkflowExecution.ID + "/payment",
-			ExecuteAt:   in.ExecuteAt,
 		}), nil
 	}
 

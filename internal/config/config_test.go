@@ -96,3 +96,28 @@ func TestMissingAndMalformedDotEnv(t *testing.T) {
 		t.Fatal("malformed dotenv must fail without exposing the input")
 	}
 }
+
+func TestQueuesAreFixedByInstanceAndCanBeIsolatedForVerification(t *testing.T) {
+	t.Setenv("TEMPORAL_TASK_QUEUE", "")
+	t.Setenv("WORKSHOP_INSTANCE", "participant")
+
+	participant := Load()
+
+	if participant.Queue != "devfest26-participant" || participant.Prefix != participant.Queue {
+		t.Fatalf("unexpected participant queue: %s", participant.Queue)
+	}
+
+	t.Setenv("WORKSHOP_INSTANCE", "presenter")
+
+	if Load().Queue != "devfest26-presenter" {
+		t.Fatal("presenter must use its own fixed queue")
+	}
+
+	t.Setenv("TEMPORAL_TASK_QUEUE", "devfest26-check-isolated")
+
+	isolated := Load()
+
+	if isolated.Queue != "devfest26-check-isolated" || isolated.Prefix != isolated.Queue {
+		t.Fatal("verification must isolate both polling and workflow ownership")
+	}
+}

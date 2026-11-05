@@ -1,23 +1,27 @@
-# Follow-up: durable local payment receipts
+# Follow-up: durable local receipts
 
-Start from `practice/01-notifications-start`, based on the completed core. The payment service provides a **local** receipt sink; no email or SMS is sent. Your job is to call it durably after payment success, while keeping payment and notification outcomes separate.
+Continue in the same checkout after the beneficiary exercise. The core workflow has no notification flag or notification Activity. The supplied payment service has a local receipt sink and SQL persistence; no email or SMS is sent.
 
-## Exercise
+The objective is **three delivery attempts, one receipt and one payment debit** when the sink fails twice. Receipt failure must not change a successful payment to a failed payment or repeat payment execution.
 
-1. Inspect the successful result in `AgentWorkflow`.
-2. Schedule `DeliverReceipt` as an Activity with a bounded retry policy.
-3. Use `result.Key` unchanged on every attempt.
-4. If delivery exhausts retries, retain successful payment status and report the notification error separately.
-5. Prove one debit and one receipt despite transient delivery failures.
+## Add the Activity
 
-The supplied `PaymentActivities.DeliverReceipt` calls `/receipts/{payment_key}?fail_first=2`. The simulated sink persists attempt count; the first two attempts return HTTP 503. The third records one receipt, protected by a primary key on `(payment_key, kind)`. Nothing repeats payment execution.
-
-## Solution
-
-Replace the exercise block after successful payment with:
+In `internal/agent/activities.go`, add:
 
 ```go
-if NotificationsEnabled && result.Status == "succeeded" {
+func (a *PaymentActivities) DeliverReceipt(ctx context.Context, key string) error {
+    return activityError(a.Client.Do(ctx, "POST", "/receipts/"+url.PathEscape(key)+"?fail_first=2", "", nil, nil))
+}
+```
+
+That file already imports `context` and `net/url`. `worker.go` registers `PaymentActivities`, so the new exported method becomes a static internal Activity. Do not advertise it as a model tool.
+
+## Call it after success
+
+In `agent_workflow.go`, insert this block after the final payment answer and before the final return:
+
+```go
+if result.Status == "succeeded" {
     s.Phase = "notifying"
     nctx := workflow.WithActivityOptions(ctx, toolOptions())
 
@@ -29,20 +33,17 @@ if NotificationsEnabled && result.Status == "succeeded" {
 }
 ```
 
-`toolOptions()` limits attempts and total execution time. This Activity is internal, not a model tool. `NotificationsEnabled` is already enabled on the practice branches; it is false on main.
+Use the same key for every attempt. The supplied `toolOptions()` bounds retries at three; the provider persists attempts and protects receipt uniqueness.
 
-## Run and verify
+## Prove it
 
-```bash
-git switch -c my-receipts practice/01-notifications-start
-unset WORKSHOP_CHECKPOINT
-source scripts/env.sh
-make build && make migrate
-make start
-# In a second matching environment terminal:
-make lab-check LAB=notifications
-```
+Run `make restart-agent`. Save `bin/pay evidence`, approve one payment, wait for its terminal result, and compare evidence:
 
-Expected: successful payment, one additional debit, three notification attempts and one additional receipt. Repeated receipt calls return the existing effect. Test the sink with `make integration`; compare against `practice/01-notifications-solution`.
+- `debits` increases by one.
+- `receipt_attempts` increases by three.
+- `receipts` increases by one.
+- Payment status is still `succeeded`.
 
-Do not re-run `PaymentWorkflow` to recover notification failure. A receipt failure must never turn a successful payment into a failed payment or initiate a replacement.
+Call the receipt endpoint again with the same original payment key and verify no additional receipt or debit. To exercise permanent failure, temporarily make `DeliverReceipt` return an error for all three attempts; the workflow must retain payment success and report a separate notification error. These are actual provider/Temporal tests; SDK-only mocks are unit tests.
+
+For an extra exercise, expose an explicitly requested receipt-resend operation that never invokes `PaymentWorkflow` again.

@@ -1,4 +1,4 @@
-package application
+package api
 
 import (
 	"context"
@@ -40,7 +40,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 
-		httpx.JSON(w, 200, map[string]any{"status": "ready", "instance": s.Config.Instance, "model_mode": s.Config.Mode, "checkpoint": s.Config.Checkpoint})
+		httpx.JSON(w, 200, map[string]any{"status": "ready", "instance": s.Config.Instance, "model_mode": s.Config.Mode})
 	})
 	m.HandleFunc("POST /requests", s.submit)
 	m.HandleFunc("GET /requests/{id}", s.state)
@@ -82,12 +82,6 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 	case "success", "decline", "unavailable", "delayed", "lost-response":
 	default:
 		httpx.Error(w, domain.Invalid("invalid scenario"))
-
-		return
-	}
-
-	if agent.Stage < 5 && in.Scenario != "success" {
-		httpx.Error(w, domain.Invalid("failure experiments start at workshop/05-recovery"))
 
 		return
 	}

@@ -1,38 +1,55 @@
-# Responsibilities and boundaries
+# Two Go processes, two workflows
 
-Gemini proposes tool calls; Go validates and controls their execution. Every tool is validated; only sending money requires additional confirmation. Temporal preserves progress. PostgreSQL transactions and stable payment keys enforce the financial effect.
+Gemini requests tools; Go validates and controls them; Temporal preserves progress. The payment service enforces the financial effect. This remains the README's core objective.
 
-The **agent workflow** starts with the request and runs ADK through `googleadk.NewContext`. Gemini calls are Activities. Each model tool schedules an Activity under its own tool name. A native `RegisterDynamicActivity` handler selects only an allowlisted tool, decodes its Go input and performs validation. The **payment workflow** starts as a child only after the application has accepted the exact proposal's approval Update.
+## Runtime
 
-Static Activities may also be called by string name. Native dynamic resolution is different: unregistered Activity types reach the one fallback dispatcher. Individual tool names are deliberately not statically registered. Model invocation and internal `SubmitTransfer`/`ReadTransfer` Activities are separately registered and absent from the model's tool catalog.
+`cmd/devfest` starts one of two long-running commands:
 
-All I/O stays out of workflow code. Activities access the simulated payment service over HTTP; only the service accesses PostgreSQL. Workflow code uses Temporal time/timers and captures tool results in deterministic state. Tool schemas guide the model; runtime validation is authoritative. A failed tool prevents subsequent tool scheduling in that request and the user can submit a corrected instruction.
+- **agent**: REST API and Temporal worker in one process, sharing one Temporal client. `internal/api` owns requests/approval; `internal/agent/worker.go` owns registrations.
+- **payment**: the simulated provider, its HTTP boundary and PostgreSQL storage. Only this service accesses payment tables.
 
-Gemini can return multiple tool calls in a single turn. The adapter obtains each calling coroutine's context through `googleadk.WorkflowContext(toolCtx)` before waiting on an Activity; a context captured from the root workflow cannot safely block a parallel tool coroutine. A preparation-in-flight guard preserves the one-proposal boundary when the model requests duplicate preparations concurrently. Calls already scheduled before another tool fails can still complete; the failure prevents subsequent tool scheduling.
+Temporal and PostgreSQL retain their existing versions and persistence. Restarting/crashing the agent temporarily removes both its API and its worker; the provider can continue processing independently. The launcher keeps the provider alive during agent restarts.
 
-Model retry limits are passed explicitly to `googleadk.NewModel` using `WithModelActivityOptions`; the bridge replaces inherited workflow Activity options. Each model Activity has at most three attempts, a 40-second attempt timeout and a 100-second total budget, with 15–30-second backoff. The agent permits at most eight model turns. The underlying Gemini SDK makes one attempt so it cannot multiply Temporal's retries. Completed recorded calls are reused during replay; an interrupted or unrecorded call may still incur repeated model charges.
+## Read four files
 
-## Payment correctness
+1. `internal/agent/beneficiary.go`: the only participant edit; declaration plus handler.
+2. `internal/agent/tools.go`: supplied catalog, strict decoding, allowlist and native Dynamic Activity dispatcher.
+3. `internal/agent/agent_workflow.go`: ADK reasoning, proposal and explicit approval.
+4. `internal/agent/payment_workflow.go`: approved execution and bounded reconciliation.
 
-- `BIGINT` kobo, exact string-to-kobo conversion; no floating-point financial writes.
-- Ten ASCII digits in a string for account numbers; leading zeros preserved.
-- Beneficiary operation keys plus bank/account uniqueness protect retried additions.
-- Transfer keys bind immutable recipient, amount, currency and simulation details.
-- Transfer-row lock, account-row lock, balance check, debit and journal entry occur in one PostgreSQL transaction.
-- A connection/commit error means the outcome may be unknown. Check the original key.
-- The response-loss scenario closes the TCP connection **after** committing the debit.
-- A two-minute reconciliation budget returns `needs_attention`; the explicit reconcile endpoint only reads the original payment. It never creates a replacement.
-- Failed-transfer retries must match a definitively failed original; they produce a new proposal and require fresh approval.
+There are no checkpoint constants or notification/scheduling feature flags. `main` is a working starter with one incomplete tool. `docs/solutions/beneficiary.go.txt` is its complete replacement; verification compiles that actual file in a temporary source copy. Follow-up guides describe extensions to the same checkout.
 
-This is a simplified simulated debit journal, not a full accounting ledger. PostgreSQL durability and Temporal persistence are separate. Durable execution does not mean automatic business compensation, zero repeated model charges, or guaranteed successful payments.
+## Durable calls
 
-## REST interfaces
+The agent workflow starts before reasoning. ADK model calls run as statically registered Activities. Every model tool runs through the one native `RegisterDynamicActivity` handler. Calling a static Activity by string name is different from native dynamic fallback resolution; model tool names are deliberately not individually registered.
 
-The app exposes POST `/requests`, GET `/requests/{id}`, POST `/requests/{id}/decision`, GET `/transactions/{reference}`, and POST `/transactions/{reference}/reconcile`. Bodies use strict bounded JSON. `/requests` takes `prompt`, optional `scenario` and optional `approval_seconds`, plus `Idempotency-Key`. It returns request/workflow IDs and explicit model mode. Decisions require `proposal_id`, an explicit boolean `approve`, and a stable Update idempotency key. GET returns canonical proposal/state/result, not merely model prose.
+Gemini can request several tools in a turn. Each adapter call recovers its own coroutine context through `googleadk.WorkflowContext(toolCtx)` before waiting. A preparation-in-flight guard preserves one proposal even for concurrent duplicate requests. The ordered catalog remains stable within a running workflow; finish requests before editing declarations.
 
-The payment service exposes beneficiary list/search/create, balance, transfer submit/status/last, inspection evidence and a simulated receipt sink. It independently checks all invariants. Both services use a fixed local account rather than authentication infrastructure.
+Model Activities use explicit ADK options: at most three attempts, a 40-second attempt timeout, a 100-second total budget and 15–30-second backoff. The agent permits eight turns. The Gemini SDK makes one attempt so it cannot multiply Temporal retries. Completed recorded calls are reused in replay; interrupted/unrecorded calls can still incur repeat charges. Audit events record identifiers rather than credentials, prompts or hidden reasoning.
 
-The demo does not promise production security or measured scalability. Services listen only on loopback. Hidden model reasoning and API credentials are not logged; invocation audit logs retain workflow/run/Activity/attempt identifiers for observable recovery evidence.
+## Validation and financial effect
+
+Every tool is validated. Adding a beneficiary from a complete user instruction needs no extra prompt. Sending money or replacing a definitively failed transfer requires a new canonical proposal and explicit human approval.
+
+- Account numbers are strings of exactly ten ASCII digits, preserving leading zeros.
+- Amounts use exact decimal-string conversion into integer kobo.
+- The dispatcher, service and PostgreSQL independently enforce their boundaries.
+- Stable beneficiary operation keys and bank/account uniqueness protect repeated additions.
+- Stable payment keys bind recipient, amount, currency and scenario.
+- A row-locked PostgreSQL transaction checks funds, debits and writes the journal atomically.
+- After a lost response, the child workflow reads the original key before considering another submission.
+- After two minutes of uncertainty, return `needs_attention`; explicit reconciliation only reads status.
+
+The response-loss scenario closes a real TCP connection after the provider commits. A timeout does not prove failure. PostgreSQL durability and Temporal persistence serve different responsibilities; this is a simulated debit journal, not a full banking ledger.
+
+## Interfaces and isolation
+
+The API exposes request creation/state, explicit proposal decisions, transaction lookup and status-only reconciliation. JSON is strict and bounded. Request keys reject changed payloads; decision Update acknowledgements bind the actual decision even if an Update ID is reused. Actor state and references come from the workflow/provider, not model narration.
+
+Fixed queues are `devfest26-participant` and `devfest26-presenter`; they do not depend on Git. Verification overrides `TEMPORAL_TASK_QUEUE` and uses isolated PostgreSQL schemas and free loopback ports. Earlier histories remain stored under their original queues. No existing database, infrastructure version or history is reset by the reorganization.
+
+Services bind to localhost and use one fixed simulated account. Authentication infrastructure is outside this workshop.
 
 ## Sources
 
@@ -40,6 +57,5 @@ The demo does not promise production security or measured scalability. Services 
 - [Dynamic Activities in Go](https://docs.temporal.io/develop/go/activities/dynamic-activity)
 - [Temporal Google ADK integration](https://github.com/temporalio/ai-integrations/tree/main/go/googleadk)
 - [PostgreSQL locking](https://www.postgresql.org/docs/17/explicit-locking.html)
-- [OpenAI APIs/Agents SDK comparison reference](https://developers.openai.com/api/docs/guides/agents)
 
-The supplied first video transcript page returned HTTP 403; it is linked, not claimed as reviewed. The supplied second-video text is a description. Official documentation supports the technical explanations.
+The supplied first-video transcript page returned HTTP 403; it is linked rather than claimed as reviewed. The supplied second-video text is a description.

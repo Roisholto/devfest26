@@ -12,16 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"go.temporal.io/googleadk"
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/worker"
 	"google.golang.org/adk/v2/model"
-	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/genai"
 
 	"devfest26/internal/agent"
-	"devfest26/internal/application"
+	"devfest26/internal/api"
 	"devfest26/internal/config"
 	"devfest26/internal/httpx"
 	"devfest26/internal/payment"
@@ -36,7 +32,7 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: devfest payment|worker|api|migrate|seed|preflight|evidence|database-check|database-init")
+		return fmt.Errorf("usage: devfest payment|agent|migrate|seed|preflight|evidence|database-check|database-init")
 	}
 
 	if err := config.LoadDotEnv(".env"); err != nil {
@@ -147,7 +143,7 @@ func run() error {
 					return fmt.Errorf("live mode needs GEMINI_API_KEY or GOOGLE_API_KEY")
 				}
 
-				m, err := newGemini(ctx, cfg.Model)
+				m, err := agent.NewGemini(ctx, cfg.Model)
 
 				if err != nil {
 					return err
@@ -163,13 +159,13 @@ func run() error {
 				}
 			}
 
-			fmt.Printf("READY instance=%s checkpoint=%s mode=%s queue=%s\n", cfg.Instance, cfg.Checkpoint, cfg.Mode, cfg.Queue)
+			fmt.Printf("READY instance=%s mode=%s queue=%s\n", cfg.Instance, cfg.Mode, cfg.Queue)
 
 			return nil
 		default:
 			return serve(ctx, cfg.Payment, payment.Handler(store))
 		}
-	case "worker":
+	case "agent":
 		if err := os.MkdirAll(filepath.Dir(cfg.Audit), 0700); err != nil {
 			return err
 		}
@@ -184,93 +180,26 @@ func run() error {
 
 		defer c.Close()
 
-		factories := map[string]googleadk.ModelFactory{}
-		factories["scripted"] = func(_ context.Context, _ string) (model.LLM, error) {
-			return agent.AuditedModel{
-				Inner: agent.ScriptedModel{},
-				Path:  cfg.Audit,
-			}, nil
-		}
-		factories[cfg.Model] = func(ctx context.Context, name string) (model.LLM, error) {
-			m, err := newGemini(ctx, name)
-
-			if err != nil {
-				return nil, err
-			}
-
-			return agent.AuditedModel{
-				Inner: m,
-				Path:  cfg.Audit,
-			}, nil
-		}
-		acts, err := googleadk.NewActivities(googleadk.Config{
-			Models: factories,
-		})
+		stopWorker, err := agent.StartWorker(c, cfg)
 
 		if err != nil {
 			return err
 		}
 
-		defer acts.Close()
+		defer stopWorker()
 
-		w := worker.New(c, cfg.Queue, worker.Options{
-			WorkerStopTimeout: 2 * time.Second,
-		})
-		acts.Register(w)
-		w.RegisterWorkflow(agent.AgentWorkflow)
-		w.RegisterWorkflow(agent.PaymentWorkflow)
-		router := &agent.Router{
-			Client: httpx.NewClient("http://" + cfg.Payment),
-			Limit:  cfg.Limit,
-		}
-		w.RegisterDynamicActivity(router.Execute, activity.DynamicRegisterOptions{})
-		// These internal operations are not tools and cannot be selected by Gemini.
-		w.RegisterActivity(&agent.PaymentActivities{
-			Client: httpx.NewClient("http://" + cfg.Payment),
-		})
-
-		if err = w.Start(); err != nil {
-			return err
-		}
-
-		slog.Info("worker ready", "queue", cfg.Queue, "mode", cfg.Mode, "stage", agent.Stage)
-		<-ctx.Done()
-		w.Stop()
-
-		return nil
-	case "api":
-		c, err := client.Dial(client.Options{
-			HostPort: cfg.Temporal,
-		})
-
-		if err != nil {
-			return err
-		}
-
-		defer c.Close()
-
-		s := &application.Server{
+		s := &api.Server{
 			Temporal: c,
 			Config:   cfg,
 			Payment:  httpx.NewClient("http://" + cfg.Payment),
 		}
 
+		slog.Info("agent ready", "queue", cfg.Queue, "mode", cfg.Mode)
+
 		return serve(ctx, cfg.API, s.Handler())
 	}
 
 	return fmt.Errorf("unknown command %q", os.Args[1])
-}
-
-func newGemini(ctx context.Context, name string) (model.LLM, error) {
-	attempts := int32(1)
-
-	return gemini.NewModel(ctx, name, &genai.ClientConfig{
-		HTTPOptions: genai.HTTPOptions{
-			RetryOptions: &genai.HTTPRetryOptions{
-				Attempts: &attempts,
-			},
-		},
-	})
 }
 
 func serve(ctx context.Context, address string, h http.Handler) error {

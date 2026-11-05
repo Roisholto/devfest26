@@ -21,15 +21,15 @@ From natural-language instructions to confirmed, recoverable payments.
 ---
 # Watch one payment work
 
-> “Send ₦10,000 to Ayomide.”
+> “Send ₦10,000 to John.”
 >
-> “Send ₦10,000 to Ayomide — GTBank ending in 4821?”
+> “Send ₦10,000 to John — Access ending in 5678?”
 >
 > “Yes.” → **Transfer successful. TX-…**
 
 **What if the payment succeeds, but its response disappears?**
 
-<!-- 0:30–4:00. Opening demo on main in the presenter environment. See docs/presenter.md. Show ask, wait, approve, wait --terminal. Use the actual returned reference. No failure yet. If live infrastructure is unavailable use dist/fallback/opening.png and the saved JSON from make demo. -->
+<!-- 0:30–4:00. Opening demo on main in the presenter environment. See docs/presenter.md. Show ask, wait, approve, wait --terminal. Use the actual returned reference. No failure yet. If live infrastructure is unavailable use dist/fallback/presenter/opening.png and the saved JSON from make demo. -->
 
 ---
 # What you will build and explore
@@ -37,13 +37,13 @@ From natural-language instructions to confirmed, recoverable payments.
 - Extend a working **Go payment agent**.
 - Implement **beneficiary creation** in ten minutes.
 - Use existing listing, search, balance and payment tools.
-- Inspect dynamic tool dispatch and worker recovery.
+- Inspect dynamic tool dispatch and agent recovery.
 - Verify **one debit** after a lost response.
 
 <!-- 4:00–5:00. Establish the learner contract. Authentication is simplified to one fixed local account. Participant and presenter environments are separate. Search is implemented beforehand. -->
 
 ---
-# Four responsibilities. Two workflows.
+# Two Go processes. Two workflows.
 
 ![architecture](assets/architecture.svg)
 
@@ -51,7 +51,7 @@ From natural-language instructions to confirmed, recoverable payments.
 
 Gemini proposes. Go validates and controls. Temporal preserves progress.
 
-<!-- 5:00–7:00. The agent workflow starts before reasoning; the payment child workflow starts only after approval. The simulated payment service owns PostgreSQL. Temporal has its own separate development persistence. No direct database/network I/O in workflow code. -->
+<!-- 5:00–7:00. The agent workflow starts before reasoning; the payment child workflow starts only after approval. The simulated payment service owns PostgreSQL. The agent API and worker share one process. The provider is the second Go process. Temporal has its own separate development persistence. No direct database/network I/O in workflow code. -->
 
 ---
 # Validation and confirmation are different
@@ -72,7 +72,7 @@ Gemini proposes. Go validates and controls. Temporal preserves progress.
 ```json
 {
   "name": "find_beneficiary",
-  "args": {"name": "Ayomide"}
+  "args": {"name": "John"}
 }
 ```
 
@@ -94,7 +94,7 @@ Tool selection does not authorize payment.
 Both use retries, timeouts and recorded results.<br>
 **Calling by name alone is not dynamic registration.**
 
-<!-- 10:00–12:00. Show RegisterDynamicActivity in cmd/devfest/main.go. Tool names are not individually registered. Model calls and internal payment Activities are statically registered and are not model-accessible tools. Source: https://docs.temporal.io/develop/go/activities/dynamic-activity -->
+<!-- 10:00–12:00. Show RegisterDynamicActivity in internal/agent/worker.go. Tool names are not individually registered. Model calls and internal payment Activities are statically registered and are not model-accessible tools. Source: https://docs.temporal.io/develop/go/activities/dynamic-activity -->
 
 ---
 # Dynamic dispatch in Go
@@ -118,7 +118,7 @@ func (r *Router) Execute(
 
 - **Workflows:** deterministic decisions, timers and approval waits.
 - **Activities:** Gemini calls and external I/O.
-- Recorded results reconstruct progress after a worker restart.
+- Recorded results reconstruct progress after an agent restart.
 - A call without a recorded completion **may run again**.
 
 > Durability reduces repeated calls.<br>Idempotency protects repeated mutations.
@@ -139,19 +139,19 @@ func (r *Router) Execute(
 
 ---
 <!-- _class: practice -->
-# Start from the exercise checkpoint
+# Stay on main. Edit one file.
 
 ```bash
-git switch -c my-beneficiary workshop/02-beneficiary-exercise
-source scripts/env.sh
-make build && make preflight
+make setup
 make start
+# After editing beneficiary.go:
+make restart-agent
 ```
 
 Existing **listing and search already work**.<br>
 Guide: `docs/beneficiary-exercise.md`
 
-<!-- 20:00–21:00. Preflight/setup happens BEFORE the event. Use another terminal for CLI commands, source the same instance/checkpoint environment. Save work before switching. Do not run git reset/clean. If a learner falls behind, commit their work and start a new branch from workshop/03-beneficiary-solution. -->
+<!-- 20:00–21:00. Setup happens BEFORE the event. Stay on main throughout. Both the declaration and handler are in internal/agent/beneficiary.go. Existing read/payment tools work before the exercise. Restart only the combined agent after editing. The guide supplies a complete replacement file; save progress before copying it. -->
 
 ---
 <!-- _class: practice -->
@@ -159,8 +159,8 @@ Guide: `docs/beneficiary-exercise.md`
 
 > “Add Ayomide at GTBank, account 0123454821.”
 
-1. Implement the typed Go handler.
-2. Add its tool-catalog entry.
+1. Add the declaration in `beneficiary.go`.
+2. Implement its typed handler in the same file.
 3. Run the acceptance checks.
 4. Ask the agent, then **search/list to verify**.
 
@@ -186,16 +186,16 @@ Guide: `docs/beneficiary-exercise.md`
 
 ---
 <!-- _class: recovery -->
-# Use the beneficiary. Restart the worker.
+# Use the beneficiary. Crash the agent.
 
 1. Prepare a payment to **Ayomide**.
-2. Stop the worker while approval is pending.
+2. Stop the agent API + worker while approval is pending.
 3. Restart it and retrieve the **same proposal**.
 4. Approve and complete the payment.
 
 Inspect the same workflow/proposal and pre-restart model invocations.
 
-<!-- 30:00–40:00. Presenter environment runs completed main independently of learners. Use docs/presenter.md or make demo. Snapshot model audit lines before shutdown and after restart BEFORE approving; no pre-existing completed calls may be invoked again. Later operations/narration can legitimately introduce new calls. If infrastructure fails use fallback recording/screenshots, clearly identified as recorded. -->
+<!-- 30:00–40:00. The presenter has completed the one-file exercise in their own checkout. Use docs/presenter.md or make demo. The API is temporarily unavailable during the crash; Temporal and the provider stay up. Snapshot model audit lines before shutdown and after restart BEFORE approving; no pre-existing completed calls may be invoked again. Later operations/narration can legitimately introduce new calls. If infrastructure fails use fallback recording/screenshots, clearly identified as recorded. -->
 
 ---
 <!-- _class: recovery -->
@@ -230,7 +230,7 @@ Retry a failed transfer only with a **new proposal and fresh approval**.
 
 - Duplicate beneficiary addition → **one beneficiary**.
 - Rejected proposal → **no payment submission**.
-- Worker restart → **recorded results reused**.
+- Agent restart → **recorded results reused**.
 - Lost response → **one debit**.
 
 > Gemini proposes. Go validates and controls.<br>Temporal preserves progress. The payment service enforces the financial effect.
@@ -245,7 +245,7 @@ Retry a failed transfer only with a **new proposal and fresh approval**.
 - **Scheduled transfers:** durable timers and execution-time checks.
 - Explore provider and database outages.
 
-Guides and independent starter/solution branches are in `docs/`.
+Written exercises and solution snippets are in `docs/`.
 
 **Questions · 10 minutes**
 

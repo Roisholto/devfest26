@@ -179,7 +179,6 @@ type Proposal struct {
 	AmountKobo  int64       `json:"amount_kobo"`
 	Currency    string      `json:"currency"`
 	PaymentKey  string      `json:"payment_key"`
-	ExecuteAt   string      `json:"execute_at,omitempty"`
 }
 type SubmitTransfer struct {
 	Key           string `json:"payment_key"`

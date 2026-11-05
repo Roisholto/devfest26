@@ -25,7 +25,3 @@ func (a *PaymentActivities) ReadTransfer(ctx context.Context, key string) (domai
 
 	return t, activityError(err)
 }
-
-func (a *PaymentActivities) DeliverReceipt(ctx context.Context, key string) error {
-	return activityError(a.Client.Do(ctx, "POST", "/receipts/"+url.PathEscape(key)+"?fail_first=2", "", nil, nil))
-}

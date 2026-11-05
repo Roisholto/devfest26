@@ -1,31 +1,52 @@
-# Follow-up: scheduled transfers with durable timers
+# Follow-up: a durable scheduled payment
 
-Start from `practice/02-scheduled-transfers-start`, independently based on main. Proposal parsing and future timestamp validation are supplied. Implement the missing durable wait between approval and payment execution.
+Continue in the same checkout. Scheduling is intentionally absent from the core workflow, tool schema and scripted model. This practice adds one explicit RFC3339 execution time, validates it at the Activity boundary and waits durably after approval.
 
-The user supplies a future **RFC3339 timestamp with an explicit offset**. Example scripted prompt:
+Use live Gemini for the natural-language scheduling prompt. No offline scheduling parser is supplied. First complete the field/schema changes below; then use a future Lagos-offset timestamp such as `Send ₦100 to John at 2026-11-06T09:00:00+01:00`. Generate a genuinely future timestamp when practising.
 
-```text
-Schedule ₦100 to Ayomide at 2026-11-05T09:00:00+01:00
-```
+## Carry and validate the time
 
-Use a genuinely future time when running; `make lab-check LAB=scheduling` generates one automatically. Relative phrases like “tomorrow morning” are intentionally outside this lab's offline contract.
-
-## Exercise
-
-1. Display recipient, amount and Lagos-local execution time in the proposal.
-2. Obtain approval of that exact proposal before scheduling.
-3. Set phase to `scheduled` and wait with `workflow.Sleep`, not `time.Sleep` or a goroutine.
-4. After the due time, start the normal payment child workflow with the same payment key.
-5. Recheck funds inside the payment-service transaction at execution time.
-
-No debit occurs early. Approval expiry applies to the wait for approval, not to the already-approved scheduled timer. If approval arrives after the scheduled time, execute as soon as possible after approval; this is visible in the canonical proposal, and never executes before approval.
-
-## Solution
-
-Replace the exercise block before `ExecuteChildWorkflow` with:
+Add this field to both `domain.Proposal` and `agent.PrepareArgs`:
 
 ```go
-if ScheduleEnabled && s.Proposal.ExecuteAt != "" {
+ExecuteAt string `json:"execute_at,omitempty"`
+```
+
+Add `"execute_at"` to the `prepare_transfer` specification's `Fields` slice in `tools.go`; leave it optional in `Required`. Extend that tool's description and the agent instruction: when the user requests scheduling, pass an explicit RFC3339 timestamp with timezone and never invent a missing time.
+
+Import `time` in `tools.go`. After validating the amount in the preparation Activity, validate the optional timestamp:
+
+```go
+if in.ExecuteAt != "" {
+    due, err := time.Parse(time.RFC3339, in.ExecuteAt)
+
+    if err != nil || !due.After(time.Now()) {
+        return nil, domain.Invalid("execute_at must be a future RFC3339 timestamp with timezone")
+    }
+}
+```
+
+Include `ExecuteAt: in.ExecuteAt` on its own line in the returned `domain.Proposal` literal. All network I/O, wall-clock validation and model calls remain outside workflow code; replay reuses the recorded proposal.
+
+## Include the time in approval
+
+In `agent_workflow.go`, after constructing the canonical confirmation answer, add:
+
+```go
+if s.Proposal.ExecuteAt != "" {
+    due, _ := time.Parse(time.RFC3339, s.Proposal.ExecuteAt)
+    s.Answer += " Execute at " + due.In(time.FixedZone("Africa/Lagos", 3600)).Format(time.RFC3339) + " (Africa/Lagos)."
+}
+```
+
+The user must approve the exact recipient, amount and time. Approval expiry covers waiting for the decision. If approval arrives after the specified time, execute as soon as available after approval; never execute before approval.
+
+## Wait before starting the child
+
+Immediately before `workflow.WithChildOptions` in `agent_workflow.go`, add:
+
+```go
+if s.Proposal.ExecuteAt != "" {
     due, _ := time.Parse(time.RFC3339, s.Proposal.ExecuteAt)
     s.Phase = "scheduled"
 
@@ -39,20 +60,10 @@ if ScheduleEnabled && s.Proposal.ExecuteAt != "" {
 }
 ```
 
-Timestamp validation happens inside the preparation Activity; its recorded result is reused on replay. The workflow only parses the validated value and uses Temporal's clock/timer. `ScheduleEnabled` is true on the practice branches and false on main.
+This uses Temporal's timer, not `time.Sleep` or a goroutine. The existing payment child and provider recheck funds at execution, using the same payment key.
 
-## Run and verify
+## Prove it with real services
 
-```bash
-git switch -c my-schedule practice/02-scheduled-transfers-start
-unset WORKSHOP_CHECKPOINT
-source scripts/env.sh
-make build && make migrate
-make start
-# Second terminal, same environment:
-make lab-check LAB=scheduling
-```
+Restart the agent in live mode. Request a payment a few minutes ahead, inspect its canonical time, then approve. Verify `scheduled` and no debit, crash/restart the agent, and retrieve the same request. After the due time there must be one debit, one reference and no repeat model calls during recovery.
 
-The acceptance script creates a near-future proposal, approves it, checks that no debit occurs early, restarts the worker during the timer, then verifies one eventual debit. Also try reducing the account's funds through a separate approved payment before the scheduled payment is due: the scheduled transfer must fail definitively for insufficient funds, without overdrawing.
-
-Complete code is in `practice/02-scheduled-transfers-solution`. Do not put `time.Now`, network calls, or direct database calls into workflow code. No second approval is required at execution because the original approval included the time.
+Also spend enough funds through a separate approved payment before the due time: the scheduled payment should fail definitively for insufficient funds. Test missing/invalid/past timestamps and withheld/rejected approval. Add cancellation as a further exercise, with an explicit rule for when cancellation is too late.
