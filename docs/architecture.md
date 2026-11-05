@@ -4,12 +4,12 @@ Gemini requests tools; Go validates and controls them; Temporal preserves progre
 
 ## Runtime
 
-`cmd/devfest` starts one of two long-running commands:
+Each service has its own entry point and executable:
 
-- **agent**: REST API and Temporal worker in one process, sharing one Temporal client. `internal/api` owns requests/approval; `internal/agent/worker.go` owns registrations.
-- **payment**: the simulated provider, its HTTP boundary and PostgreSQL storage. Only this service accesses payment tables.
+- **`cmd/agent` → `bin/agent`**: REST API and Temporal worker in one process, sharing one Temporal client. `internal/api` owns requests/approval; `internal/agent/worker.go` owns registrations.
+- **`cmd/payment` → `bin/payment`**: the simulated provider, its HTTP boundary and PostgreSQL storage. Only this service accesses payment tables.
 
-Temporal and PostgreSQL retain their existing versions and persistence. Restarting/crashing the agent temporarily removes both its API and its worker; the provider can continue processing independently. The launcher keeps the provider alive during agent restarts.
+Temporal and PostgreSQL retain their existing versions and persistence. Restarting/crashing the agent temporarily removes both its API and its worker; the provider can continue processing independently. The Makefile keeps the provider alive during agent restarts. Both binaries start their service without a role subcommand. Database initialization/migration/seed/checks belong to `bin/payment`; Temporal/model preflight and history replay belong to `bin/agent`.
 
 ## Read four files
 

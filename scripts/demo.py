@@ -48,12 +48,12 @@ def payment(scenario, restart=False):
     if restart:
         pid_file = Path(f".local/{INSTANCE}/agent.pid")
         pid = int(pid_file.read_text())
-        command = Path(f"/proc/{pid}/cmdline").read_bytes()
-        assert b"devfest" in command and b"agent" in command, "refuse to stop an unrelated process"
+        command = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        assert Path(os.fsdecode(command[0])).name == "agent", "refuse to stop an unrelated process"
         os.kill(pid, signal.SIGKILL)
         time.sleep(2)
         log = open(f".local/{INSTANCE}/agent-restarted.log", "ab", buffering=0)
-        agent = subprocess.Popen(["./bin/devfest", "agent"], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        agent = subprocess.Popen(["./bin/agent"], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         pid_file.write_text(str(agent.pid))
         recovered = wait(rid)
         assert recovered["proposal"] == pending["proposal"]

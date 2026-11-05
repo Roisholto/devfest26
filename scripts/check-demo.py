@@ -50,7 +50,7 @@ def main():
     original = os.environ.copy()
     root = Path.cwd()
     source_copy = tempfile.TemporaryDirectory(prefix="devfest-solution-", dir=root / ".local") if options.solution else None
-    binary = root / "bin/devfest"
+    binaries = {name: root / "bin" / name for name in ("agent", "payment")}
     if source_copy:
         workspace = Path(source_copy.name)
         for name in ("go.mod", "go.sum"):
@@ -58,8 +58,8 @@ def main():
         for name in ("cmd", "internal"):
             shutil.copytree(root / name, workspace / name)
         shutil.copy2(root / "docs/solutions/beneficiary.go.txt", workspace / "internal/agent/beneficiary.go")
-        binary = workspace / "devfest"
-        subprocess.run(["go", "build", "-o", str(binary), "./cmd/devfest"], cwd=workspace, check=True)
+        binaries["agent"] = workspace / "agent"
+        subprocess.run(["go", "build", "-o", str(binaries["agent"]), "./cmd/agent"], cwd=workspace, check=True)
     # libpq doesn't expand a URI supplied through PGDATABASE. Pass a URI with
     # its password removed as --dbname, keeping the password in the environment.
     db_query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
@@ -120,15 +120,15 @@ def main():
         next_request = time.monotonic() + pause
         return state
 
-    def command(*args):
-        result = subprocess.run([str(binary), *args], env=env, capture_output=True, timeout=110)
+    def command(service, *args):
+        result = subprocess.run([str(binaries[service]), *args], env=env, capture_output=True, timeout=110)
         if result.returncode:
             raise RuntimeError(args[0] + " failed; check configuration/preflight")
 
     def start(service):
         log = (out / (service + ".log")).open("ab", buffering=0)
         logs.append(log)
-        proc = subprocess.Popen([str(binary), service], env=env, stdout=log, stderr=subprocess.STDOUT)
+        proc = subprocess.Popen([str(binaries[service])], env=env, stdout=log, stderr=subprocess.STDOUT)
         processes.append(proc)
         return proc
 
@@ -157,9 +157,10 @@ def main():
 
     schema_sql('CREATE SCHEMA "' + schema + '"')
     try:
-        command("migrate")
-        command("seed")
-        command("preflight")
+        command("payment", "migrate")
+        command("payment", "seed")
+        command("payment", "preflight")
+        command("agent", "preflight")
         provider = start("payment")
         agent = start("agent")
         deadline = time.monotonic() + 15
@@ -236,7 +237,7 @@ def main():
             subprocess.run([sys.executable, "scripts/exercise-check.py"], env=env, check=True)
             check("participant acceptance command passes with the written solution", True)
         for rid in histories:
-            command("replay", rid)
+            command("agent", "replay", rid)
         check("all " + str(len(histories)) + " workflow histories replay without model calls", True)
         (out / "result.json").write_text(json.dumps({"model": env.get("GEMINI_MODEL"), "mode": mode, "solution": options.solution, "checks": results, "histories": histories}, indent=2))
         passed = True

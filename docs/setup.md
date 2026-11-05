@@ -4,8 +4,8 @@ Use the installed Go **1.27.3**, PostgreSQL **17** and Temporal versions. Infras
 
 The runtime has **two Go processes**:
 
-- `devfest agent`: REST API, Google ADK and Temporal worker together.
-- `devfest payment`: simulated provider and PostgreSQL persistence.
+- `bin/agent` (`cmd/agent`): REST API, Google ADK and Temporal worker together.
+- `bin/payment` (`cmd/payment`): simulated provider and PostgreSQL persistence.
 
 ## Start
 
@@ -15,7 +15,7 @@ Put `DATABASE_URL` and, for live inference, `GEMINI_API_KEY` or `GOOGLE_API_KEY`
 make setup
 ```
 
-This builds the binaries, initializes the configured local database if missing, and applies migrations and idempotent seeds. Without an explicit URL it uses the existing managed PostgreSQL 17 cluster on port 55432. It never resets an account balance. `./bin/devfest database-check` checks connectivity without changing schema or data.
+This builds the binaries, initializes the configured local database if missing, and applies migrations and idempotent seeds. Without an explicit URL it uses the existing managed PostgreSQL 17 cluster on port 55432. It never resets an account balance. `./bin/payment database-check` checks connectivity without changing schema or data.
 
 Start Temporal in its own terminal **if it is not already running**:
 
@@ -28,6 +28,18 @@ In the workshop terminal:
 ```bash
 make start
 ```
+
+To launch the same services independently in two terminals, use `make payment` and `make agent`, or run their binaries directly:
+
+```bash
+./bin/payment
+# In another terminal:
+./bin/agent
+```
+
+The Makefile calls Go, the service binaries and the Temporal CLI directly. Its `start` target supervises the two binaries; `restart-agent` replaces only the agent. The remaining shell helpers handle shared dotenv loading, PostgreSQL provisioning and guarded data resets.
+
+Make launch targets record the PIDs used by `make restart-agent`. When launching binaries directly, stop and restart the agent in its terminal.
 
 Temporal uses port 7233 and its UI is at <http://localhost:8233>. Its existing development persistence is separate from the payment database. The default model is the explicitly labelled scripted adapter, which works offline after dependencies are installed. For Gemini, start with `MODEL_MODE=live make start` or set `MODEL_MODE=live` in `.env`; no automatic model fallback occurs.
 

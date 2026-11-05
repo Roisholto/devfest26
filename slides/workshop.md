@@ -51,7 +51,7 @@ From natural-language instructions to confirmed, recoverable payments.
 
 Gemini proposes. Go validates and controls. Temporal preserves progress.
 
-<!-- 5:00–7:00. The agent workflow starts before reasoning; the payment child workflow starts only after approval. The simulated payment service owns PostgreSQL. The agent API and worker share one process. The provider is the second Go process. Temporal has its own separate development persistence. No direct database/network I/O in workflow code. -->
+<!-- 5:00–7:00. The agent workflow starts before reasoning; the payment child workflow starts only after approval. The simulated payment service owns PostgreSQL. The agent API and worker share one process. The provider is the second Go process. Separate entry points are cmd/agent and cmd/payment; Make invokes their binaries directly. Temporal has its own separate development persistence. No direct database/network I/O in workflow code. -->
 
 ---
 # Validation and confirmation are different
