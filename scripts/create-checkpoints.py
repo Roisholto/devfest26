@@ -68,7 +68,7 @@ func (r *Router) AddBeneficiary(ctx context.Context, key string, in domain.AddBe
 
 for lab, flag, marker, stub in [
     ("01-notifications", "NotificationsEnabled", '\tif NotificationsEnabled && result.Status == "succeeded" {', '\tif NotificationsEnabled && result.Status == "succeeded" {\n\t\ts.Error = "Exercise: schedule DeliverReceipt without repeating payment"\n\t}'),
-    ("02-scheduled-transfers", "ScheduleEnabled", '\tif ScheduleEnabled && s.Proposal.ExecuteAt != "" {', '\tif ScheduleEnabled && s.Proposal.ExecuteAt != "" {\n\t\ts.Phase = "error"\n\t\ts.Error = "Exercise: add the durable scheduled wait before payment"\n\t\treturn s, nil\n\t}'),
+    ("02-scheduled-transfers", "ScheduleEnabled", '\tif ScheduleEnabled && s.Proposal.ExecuteAt != "" {', '\tif ScheduleEnabled && s.Proposal.ExecuteAt != "" {\n\t\ts.Phase = "error"\n\t\ts.Error = "Exercise: add the durable scheduled wait before payment"\n\n\t\treturn s, nil\n\t}'),
 ]:
     checkpoint = source("internal/agent/checkpoint.go").replace("const " + flag + " = false", "const " + flag + " = true")
     start = create("practice/" + lab + "-start", main, {"internal/agent/checkpoint.go": checkpoint, "internal/agent/workflow.go": replace_block(source("internal/agent/workflow.go"), marker, stub)}, "practice: " + lab + " starter")

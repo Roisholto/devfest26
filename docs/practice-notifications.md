@@ -20,9 +20,11 @@ Replace the exercise block after successful payment with:
 if NotificationsEnabled && result.Status == "succeeded" {
     s.Phase = "notifying"
     nctx := workflow.WithActivityOptions(ctx, toolOptions())
+
     if err := workflow.ExecuteActivity(nctx, "DeliverReceipt", result.Key).Get(ctx, nil); err != nil {
         s.Error = "payment succeeded; receipt delivery failed: " + err.Error()
     }
+
     s.Phase = "succeeded"
 }
 ```

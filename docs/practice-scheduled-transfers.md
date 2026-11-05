@@ -28,11 +28,13 @@ Replace the exercise block before `ExecuteChildWorkflow` with:
 if ScheduleEnabled && s.Proposal.ExecuteAt != "" {
     due, _ := time.Parse(time.RFC3339, s.Proposal.ExecuteAt)
     s.Phase = "scheduled"
+
     if delay := due.Sub(workflow.Now(ctx)); delay > 0 {
         if err := workflow.Sleep(ctx, delay); err != nil {
             return s, err
         }
     }
+
     s.Phase = "executing"
 }
 ```

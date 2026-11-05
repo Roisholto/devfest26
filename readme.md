@@ -151,7 +151,7 @@ Basic familiarity with APIs and backend development will be useful. Prior experi
 
 ### Workshop Implementation
 
-The implementation uses **Go 1.27.3**, Google ADK/Gemini, Temporal, and a simulated **Go/PostgreSQL 17** payment service. Participants extend a working reference application by implementing beneficiary creation, then inspect approval and failure recovery. Listing/search are supplied before the exercise. All model tool calls use native Temporal Dynamic Activities.
+The implementation uses **Go 1.27.3**, Google ADK/Gemini, Temporal, and a simulated **Go/PostgreSQL** payment service (PostgreSQL 18.6 for new containers; the existing native setup uses installed PostgreSQL 17). Participants extend a working reference application by implementing beneficiary creation, then inspect approval and failure recovery. Listing/search are supplied before the exercise. All model tool calls use native Temporal Dynamic Activities.
 
 - [Setup and commands](docs/setup.md)
 - [Ten-minute beneficiary exercise and complete code](docs/beneficiary-exercise.md)

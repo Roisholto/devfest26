@@ -19,18 +19,22 @@ var EnvKeys = []string{
 
 func ReadDotEnv(path string) (map[string]string, error) {
 	values, err := godotenv.Read(path)
+
 	if os.IsNotExist(err) {
 		return map[string]string{}, nil
 	}
+
 	if err != nil {
 		// Parse errors can contain the original line, including credentials.
 		return nil, fmt.Errorf("cannot load dotenv configuration; check file access and KEY=value syntax")
 	}
+
 	for _, key := range EnvKeys {
 		if strings.IndexByte(values[key], 0) >= 0 {
 			return nil, fmt.Errorf("dotenv configuration cannot contain NUL bytes")
 		}
 	}
+
 	return values, nil
 }
 
@@ -38,18 +42,22 @@ func ReadDotEnv(path string) (map[string]string, error) {
 // Exported process variables take precedence over values in the file.
 func LoadDotEnv(path string) error {
 	values, err := ReadDotEnv(path)
+
 	if err != nil {
 		return err
 	}
+
 	for _, key := range EnvKeys {
 		if _, exists := os.LookupEnv(key); exists {
 			continue
 		}
+
 		if value, exists := values[key]; exists {
 			if err := os.Setenv(key, value); err != nil {
 				return fmt.Errorf("cannot set application configuration variable %s", key)
 			}
 		}
 	}
+
 	return nil
 }

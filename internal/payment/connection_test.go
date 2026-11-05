@@ -11,8 +11,14 @@ import (
 
 func TestConnectionErrorsDoNotExposeCredentials(t *testing.T) {
 	for _, err := range []error{
-		&pgconn.PgError{Code: "28P01", Message: "secret-password"},
-		&pgconn.PgError{Code: "3D000", Message: "secret-password"},
+		&pgconn.PgError{
+			Code:    "28P01",
+			Message: "secret-password",
+		},
+		&pgconn.PgError{
+			Code:    "3D000",
+			Message: "secret-password",
+		},
 		fmt.Errorf("secret-password: %w", syscall.ECONNREFUSED),
 		fmt.Errorf("cannot parse postgres://user:secret-password@host/db"),
 	} {

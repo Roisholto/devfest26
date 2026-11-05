@@ -1,6 +1,6 @@
 # Setup before the workshop
 
-Use Linux/WSL, Bash, Go **1.27.3**, PostgreSQL **17** binaries, Temporal CLI, Python 3, and Node/npm for the slides. The application uses Go `net/http`, `http.ServeMux`, `pgx/v5`/`pgxpool`, parameterized SQL, embedded versioned SQL migrations, and `log/slog`. There is no ORM or application authentication layer. Services bind to localhost and use one fixed simulated NGN account.
+Use Linux/WSL, Bash, Go **1.27.3**, PostgreSQL binaries, Temporal CLI, Python 3, and Node/npm for the slides. New container installations use the latest stable PostgreSQL **18.6** image. The existing native route uses the PostgreSQL **17** binaries installed on this machine; it does not upgrade existing clusters in place. The application uses Go `net/http`, `http.ServeMux`, `pgx/v5`/`pgxpool`, parameterized SQL, embedded versioned SQL migrations, and `log/slog`. There is no ORM or application authentication layer. Services bind to localhost and use one fixed simulated NGN account.
 
 The learner contract: **extend a working Go payment agent**, implement one tool, and explore recovery. Listing/search and payment-service persistence are supplied. All accounts and money are simulated.
 
@@ -32,7 +32,7 @@ For an existing PostgreSQL installation, put `DATABASE_URL` in the repository-ro
 
 Run `./bin/devfest database-check` for a connection-only check with no schema/data changes. When ready to initialize the workshop, run `make setup`: it skips the native cluster for an explicitly configured database, creates the selected database if it is missing on a local server and the supplied role has permission, then migrates/seeds it. Hosted databases must already be provisioned. `make migrate seed` only installs tables in an existing database. The reset script refuses external connection strings. Use separate database settings in fresh shells if running presenter and participant instances against externally provisioned databases; a single configured URL otherwise targets the same database for both.
 
-Optional Docker alternative: stop the managed native cluster first, then run `docker compose up -d --wait postgres` and `make migrate seed`. Compose exposes only loopback port 55432 and initializes the same isolated roles/databases. Temporal and the Go processes still run natively. This alternative is supplied but was not run here because Docker is unavailable in this WSL environment.
+Optional Docker alternative: stop the managed native cluster first, then run `docker compose up -d --wait postgres` and `make migrate seed`. Compose uses PostgreSQL 18.6, exposes only loopback port 55432 and initializes the same isolated roles/databases. Its new `workshop-postgres18` volume uses PostgreSQL 18's `/var/lib/postgresql` mount layout. It leaves any old PostgreSQL 17 volume untouched; moving existing data to a different major version requires a separate migration. Temporal and the Go processes still run natively. This alternative is supplied but was not run here because Docker is unavailable in this WSL environment.
 
 ## 3. Start Temporal
 
@@ -135,6 +135,8 @@ node scripts/capture-artifacts.mjs # offline font checks, layout checks, screens
 PDF export needs Chrome/Chromium. Set `CHROME_PATH` to a native browser binary if auto-discovery selects a nonworking WSL snap. No Node tools are needed to run the Go demo. Marp's transitive browser/download tooling currently reports npm audit advisories; use the pinned lockfile with this trusted local deck and an already installed browser. Do not force an incompatible Marp downgrade suggested by npm audit.
 
 Google Sans and Roboto Mono are bundled with their licenses and embedded in the PDF, matching the supplied DevFest template. Keep `dist/assets/` alongside `dist/workshop.html` when sharing the offline HTML. The capture check blocks network requests and verifies the fonts Chromium actually renders, saving `dist/font-check.json`; it also checks all 21 slides for overflow.
+
+The [Go rules](../AGENTS..md) apply to source and exercise solutions. `make test` includes unit tests and Temporal's workflow test environment; those mocks are not integration coverage. `make integration` composes the real payment `Handler`, `Store`, HTTP client and PostgreSQL in temporary schemas. `make live-check` exercises the real application, worker, ADK/Gemini integration, Temporal server and payment service. Dependencies are updated with actual `go get <package>@latest` commands followed by module-diff review and these checks. There is currently no application Dockerfile; the builder/runner version rule applies when one is introduced.
 
 Explicit reset, after stopping services and finishing active workflows:
 

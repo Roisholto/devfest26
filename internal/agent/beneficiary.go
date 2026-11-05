@@ -12,9 +12,12 @@ func (r *Router) AddBeneficiary(ctx context.Context, key string, in domain.AddBe
 	if err := in.Validate(); err != nil {
 		return nil, err
 	}
+
 	var out domain.Beneficiary
+
 	if err := r.Client.Do(ctx, "POST", "/beneficiaries", key, in, &out); err != nil {
 		return nil, err
 	}
+
 	return toMap(out), nil
 }
