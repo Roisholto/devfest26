@@ -30,8 +30,19 @@ func Handler(s *Store) http.Handler {
 
 		httpx.JSON(w, 200, b)
 	})
+	m.HandleFunc("GET /beneficiaries/{id}", func(w http.ResponseWriter, r *http.Request) {
+		beneficiary, err := s.GetBeneficiary(r.Context(), r.PathValue("id"))
+
+		if err != nil {
+			httpx.Error(w, err)
+
+			return
+		}
+
+		httpx.JSON(w, 200, beneficiary)
+	})
 	m.HandleFunc("POST /beneficiaries", func(w http.ResponseWriter, r *http.Request) {
-		var in domain.AddBeneficiary
+		var in domain.AddBeneficiaryRequest
 
 		if err := httpx.Decode(w, r, &in); err != nil {
 			httpx.Error(w, err)
@@ -61,7 +72,7 @@ func Handler(s *Store) http.Handler {
 		httpx.JSON(w, 200, map[string]any{"balance_kobo": n, "currency": "NGN"})
 	})
 	m.HandleFunc("POST /transfers", func(w http.ResponseWriter, r *http.Request) {
-		var in domain.SubmitTransfer
+		var in domain.SubmitTransferRequest
 
 		if err := httpx.Decode(w, r, &in); err != nil {
 			httpx.Error(w, err)
@@ -132,9 +143,15 @@ func Handler(s *Store) http.Handler {
 		httpx.JSON(w, 200, v)
 	})
 	m.HandleFunc("POST /receipts/{key}", func(w http.ResponseWriter, r *http.Request) {
-		failFirst, _ := strconv.Atoi(r.URL.Query().Get("fail_first"))
+		value := r.URL.Query().Get("fail_first")
 
-		if failFirst < 0 || failFirst > 2 {
+		if value == "" {
+			value = "0"
+		}
+
+		failFirst, err := strconv.Atoi(value)
+
+		if err != nil || failFirst < 0 || failFirst > 2 {
 			httpx.Error(w, domain.Invalid("fail_first must be 0–2"))
 
 			return

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Record real local demo results, including a real agent crash.
+"""Record real local demo results, including a real worker stop.
 
-Run make payment and make agent in separate terminals first.
-The recovery step asks you to stop/restart the agent manually.
+Run make payment, make api and make worker in separate terminals first.
+The recovery step asks you to stop/restart the worker manually.
 It adds simulated transactions; no database reset is performed.
 """
 import collections
@@ -45,7 +45,7 @@ def payment(scenario, restart=False):
     record("PROPOSAL " + rid, pending)
     counts_before = invocation_counts(rid)
     if restart:
-        input("Stop the agent with Ctrl-C, run make agent again, then press Enter here: ")
+        input("Stop only the worker with Ctrl-C, run make worker again, then press Enter here: ")
         recovered = wait(rid)
         assert recovered["proposal"] == pending["proposal"]
         assert invocation_counts(rid) == counts_before, "completed model calls were invoked again"
@@ -77,4 +77,4 @@ for name in ("opening", "restart", "lost-response"):
     cards.append(f'<section id="{name}"><h1>{name.replace("-", " ").title()}</h1><p>Recorded local run · {html.escape(data["model"])}</p><pre>{html.escape(json.dumps(summary, indent=2, ensure_ascii=False))}</pre><p>Full JSON and terminal recording are included alongside this page.</p></section>')
 page = '<!doctype html><meta charset="utf-8"><title>Recorded DevFest demo</title><style>body{margin:0;background:#f0f0f0;color:#202124;font:24px Arial}section{min-height:680px;box-sizing:border-box;padding:45px 65px;border-bottom:2px solid #222}h1{margin:0 0 15px;font-size:45px}pre{font:19px monospace;background:#ffe8a1;border:2px solid #222;border-radius:25px;padding:25px;white-space:pre-wrap}p{font-size:21px}</style>' + "".join(cards)
 (out / "index.html").write_text(page)
-print("PASS: opening, agent crash, one-debit lost-response reconciliation, and safe last-transfer lookup. Recorded artifacts:", out)
+print("PASS: opening, worker recovery, one-debit lost-response reconciliation, and safe last-transfer lookup. Recorded artifacts:", out)

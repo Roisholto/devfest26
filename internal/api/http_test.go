@@ -43,7 +43,7 @@ func TestDuplicateRequestSurfacesConflictAndComparesPayload(t *testing.T) {
 	for _, same := range []bool{false, true} {
 		c := &mocks.Client{}
 		c.On("ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(o client.StartWorkflowOptions) bool { return o.WorkflowExecutionErrorWhenAlreadyStarted }), mock.Anything, mock.Anything).Return(nil, &serviceerror.WorkflowExecutionAlreadyStarted{})
-		old := Request{
+		old := StartAgentRequest{
 			Prompt:   "Send ₦100 to Ayomide",
 			Scenario: "success",
 		}
@@ -104,7 +104,7 @@ func TestReusedUpdateIDCannotHideChangedDecision(t *testing.T) {
 	for _, same := range []bool{false, true} {
 		c := &mocks.Client{}
 		h := &mocks.WorkflowUpdateHandle{}
-		original := agent.Decision{
+		original := agent.ApprovalDecision{
 			ProposalID: "one",
 			Approve:    false,
 		}

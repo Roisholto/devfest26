@@ -1,3 +1,4 @@
+// Package payment implements the simulated provider and its PostgreSQL storage.
 package payment
 
 import (
@@ -16,8 +17,12 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+// Store persists simulated beneficiaries, balances, transfer outcomes and
+// receipts in PostgreSQL. Submission atomically checks funds, debits the account
+// and writes the journal entry under a stable payment key.
 type Store struct {
-	Pool  *pgxpool.Pool
+	Pool *pgxpool.Pool
+	// Limit is the per-transfer validation ceiling, in integer kobo.
 	Limit int64
 }
 
@@ -93,7 +98,7 @@ func (s *Store) Seed(ctx context.Context) error {
 		return err
 	}
 
-	for _, b := range []domain.AddBeneficiary{{
+	for _, b := range []domain.AddBeneficiaryRequest{{
 		Name:          "John",
 		BankCode:      "044",
 		AccountNumber: "0012345678",
@@ -110,7 +115,7 @@ func (s *Store) Seed(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) Add(ctx context.Context, key string, b domain.AddBeneficiary) (domain.Beneficiary, error) {
+func (s *Store) Add(ctx context.Context, key string, b domain.AddBeneficiaryRequest) (domain.Beneficiary, error) {
 	var out domain.Beneficiary
 
 	if err := domain.ValidateKey(key); err != nil {
@@ -167,6 +172,7 @@ func (s *Store) Add(ctx context.Context, key string, b domain.AddBeneficiary) (d
 	return out, tx.Commit(ctx)
 }
 
+// List returns up to 50 demo-account beneficiaries matching a name fragment.
 func (s *Store) List(ctx context.Context, q string) ([]domain.Beneficiary, error) {
 	if len(q) > 80 {
 		return nil, domain.Invalid("search query is too long")
@@ -195,6 +201,24 @@ func (s *Store) List(ctx context.Context, q string) ([]domain.Beneficiary, error
 	return out, rows.Err()
 }
 
+// GetBeneficiary looks up one recipient by ID within the fixed demo account.
+// It returns not_found for missing IDs and recipients belonging to other accounts.
+func (s *Store) GetBeneficiary(ctx context.Context, id string) (domain.Beneficiary, error) {
+	var beneficiary domain.Beneficiary
+
+	if id == "" {
+		return beneficiary, domain.Invalid("beneficiary_id is required")
+	}
+
+	err := s.Pool.QueryRow(ctx, `SELECT id,name,bank_code,account_number FROM beneficiaries WHERE id=$1 AND account_id='demo'`, id).Scan(&beneficiary.ID, &beneficiary.Name, &beneficiary.BankCode, &beneficiary.AccountNumber)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return beneficiary, domain.NotFound("beneficiary not found")
+	}
+
+	return beneficiary, err
+}
+
 func (s *Store) Balance(ctx context.Context) (int64, error) {
 	var n int64
 
@@ -219,7 +243,7 @@ func scanTransfer(row pgx.Row) (domain.Transfer, error) {
 
 // Submit makes the provider itself safe under at-least-once Activity execution.
 // Uncertainty after Commit is resolved by the caller querying the original key.
-func (s *Store) Submit(ctx context.Context, in domain.SubmitTransfer) (domain.Transfer, bool, error) {
+func (s *Store) Submit(ctx context.Context, in domain.SubmitTransferRequest) (domain.Transfer, bool, error) {
 	var zero domain.Transfer
 
 	if err := in.Validate(s.Limit); err != nil {
@@ -345,7 +369,7 @@ func (s *Store) Get(ctx context.Context, key string) (domain.Transfer, error) {
 
 	defer tx.Rollback(ctx)
 
-	t, err := scanTransfer(tx.QueryRow(ctx, `SELECT `+transferColumns+` FROM transfers WHERE payment_key=$1 OR reference=$1 FOR UPDATE`, key))
+	t, err := scanTransfer(tx.QueryRow(ctx, `SELECT `+transferColumns+` FROM transfers WHERE account_id='demo' AND (payment_key=$1 OR reference=$1) FOR UPDATE`, key))
 
 	if err != nil {
 		return t, err

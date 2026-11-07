@@ -19,7 +19,7 @@ func Serve(ctx context.Context, address string, h http.Handler) error {
 
 	s := &http.Server{
 		Addr:              address,
-		Handler:           h,
+		Handler:           logRequests(h),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      20 * time.Second,

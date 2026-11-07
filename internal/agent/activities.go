@@ -8,9 +8,14 @@ import (
 	"devfest26/internal/httpx"
 )
 
-type PaymentActivities struct{ Client *httpx.Client }
+// PaymentActivities implements the statically registered submission and status
+// lookup operations used by PaymentWorkflow after approval. These operations
+// belong to the internal payment path rather than the model's tool catalog.
+type PaymentActivities struct {
+	Client *httpx.Client
+}
 
-func (a *PaymentActivities) SubmitTransfer(ctx context.Context, in domain.SubmitTransfer) (domain.Transfer, error) {
+func (a *PaymentActivities) SubmitTransfer(ctx context.Context, in domain.SubmitTransferRequest) (domain.Transfer, error) {
 	var t domain.Transfer
 
 	err := a.Client.Do(ctx, "POST", "/transfers", "", in, &t)

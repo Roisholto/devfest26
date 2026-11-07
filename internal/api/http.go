@@ -1,3 +1,5 @@
+// Package api exposes HTTP operations for starting and inspecting durable agent
+// requests and submitting explicit payment decisions.
 package api
 
 import (
@@ -20,12 +22,19 @@ import (
 	"devfest26/internal/httpx"
 )
 
+// Server serves agent requests, Workflow queries and payment decisions through
+// a Temporal client. A separate worker executes the Workflows and Activities;
+// the payment client supports authoritative transaction lookups.
 type Server struct {
 	Temporal client.Client
 	Config   config.Config
 	Payment  *httpx.Client
 }
-type Request struct {
+
+// StartAgentRequest is the POST /requests body that starts a durable agent
+// request. It supplies the prompt and demo settings; payment approval is sent
+// separately to the request's decision endpoint.
+type StartAgentRequest struct {
 	Prompt          string `json:"prompt"`
 	Scenario        string `json:"scenario,omitempty"`
 	ApprovalSeconds int    `json:"approval_seconds,omitempty"`
@@ -52,7 +61,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
-	var in Request
+	var in StartAgentRequest
 
 	if err := httpx.Decode(w, r, &in); err != nil {
 		httpx.Error(w, err)
@@ -101,7 +110,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 		WorkflowIDReusePolicy:                    enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 		WorkflowExecutionErrorWhenAlreadyStarted: true,
 		Memo:                                     map[string]any{"request_fingerprint": hash},
-	}, agent.AgentWorkflow, agent.Input{
+	}, agent.AgentWorkflow, agent.WorkflowInput{
 		Prompt:          in.Prompt,
 		Model:           s.Config.Model,
 		Scenario:        in.Scenario,
@@ -167,7 +176,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if desc.WorkflowExecutionInfo.Status != enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
-		var state agent.State
+		var state agent.WorkflowState
 
 		if err = s.Temporal.GetWorkflow(ctx, id, "").Get(ctx, &state); err != nil {
 			httpx.Error(w, err)
@@ -188,7 +197,7 @@ func (s *Server) state(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var state agent.State
+	var state agent.WorkflowState
 
 	if err = value.Get(&state); err != nil {
 		httpx.Error(w, err)
@@ -225,7 +234,7 @@ func (s *Server) decision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d := agent.Decision{
+	d := agent.ApprovalDecision{
 		ProposalID: wire.ProposalID,
 		Approve:    *wire.Approve,
 	}

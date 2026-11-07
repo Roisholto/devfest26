@@ -1,12 +1,12 @@
 # Follow-up: a durable scheduled payment
 
-Continue in the same checkout. Scheduling is intentionally absent from the core workflow, tool schema and scripted model. This practice adds one explicit RFC3339 execution time, validates it at the Activity boundary and waits durably after approval.
+Continue in the same checkout. Scheduling is intentionally absent from the core workflow and tool schema. This practice adds one explicit RFC3339 execution time, validates it at the Activity boundary and waits durably after approval.
 
 Use Gemini for the natural-language scheduling prompt. First complete the field/schema changes below; then use a future Lagos-offset timestamp such as `Send ₦100 to John at 2026-11-06T09:00:00+01:00`. Generate a genuinely future timestamp when practising.
 
 ## Carry and validate the time
 
-Add this field to both `domain.Proposal` and `agent.PrepareArgs`:
+Add this field to both `domain.TransferProposal` and `agent.PrepareTransferArgs`:
 
 ```go
 ExecuteAt string `json:"execute_at,omitempty"`
@@ -26,7 +26,7 @@ if in.ExecuteAt != "" {
 }
 ```
 
-Include `ExecuteAt: in.ExecuteAt` on its own line in the returned `domain.Proposal` literal. All network I/O, wall-clock validation and model calls remain outside workflow code; replay reuses the recorded proposal.
+Include `ExecuteAt: in.ExecuteAt` on its own line in the returned `domain.TransferProposal` literal. All network I/O, wall-clock validation and model calls remain outside workflow code; replay reuses the recorded proposal.
 
 ## Include the time in approval
 
@@ -64,6 +64,6 @@ This uses Temporal's timer, not `time.Sleep` or a goroutine. The existing paymen
 
 ## Prove it with real services
 
-Stop the agent with Ctrl-C, then run `make agent` again. Request a payment a few minutes ahead, inspect its canonical time, then approve. Verify `scheduled` and no debit, crash/restart the agent, and retrieve the same request. After the due time there must be one debit, one reference and no repeat model calls during recovery.
+Stop the worker with Ctrl-C, then run `make worker` again. Request a payment a few minutes ahead, inspect its canonical time, then approve. Verify `scheduled` and no debit, stop/restart the worker, and retrieve the same request. After the due time there must be one debit, one reference and no repeat model calls during recovery.
 
 Also spend enough funds through a separate approved payment before the due time: the scheduled payment should fail definitively for insufficient funds. Test missing/invalid/past timestamps and withheld/rejected approval. Add cancellation as a further exercise, with an explicit rule for when cancellation is too late.

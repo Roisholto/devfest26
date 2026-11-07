@@ -62,6 +62,9 @@ func Error(w http.ResponseWriter, err error) {
 	})
 }
 
+// Client exchanges JSON with an HTTP service at Base and bounds decoded
+// responses. HTTP controls per-call transport timeouts; each call also honors
+// its supplied context deadline.
 type Client struct {
 	Base string
 	HTTP *http.Client

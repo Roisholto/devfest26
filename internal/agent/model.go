@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"iter"
 	"os"
 	"sync"
@@ -15,9 +16,17 @@ import (
 
 // NewGemini lets Temporal own retries rather than multiplying them in the SDK.
 func NewGemini(ctx context.Context, name string) (model.LLM, error) {
+	key := os.Getenv("GEMINI_API_KEY")
+
+	if key == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY is required")
+	}
+
 	attempts := int32(1)
 
 	return gemini.NewModel(ctx, name, &genai.ClientConfig{
+		APIKey:  key,
+		Backend: genai.BackendGeminiAPI,
 		HTTPOptions: genai.HTTPOptions{
 			RetryOptions: &genai.HTTPRetryOptions{
 				Attempts: &attempts,
@@ -28,6 +37,9 @@ func NewGemini(ctx context.Context, name string) (model.LLM, error) {
 
 var auditMu sync.Mutex
 
+// AuditedModel decorates an ADK model with JSONL invocation events for each
+// Temporal Activity attempt. It requires an Activity context and records
+// Workflow, Activity, attempt and model identifiers for recovery verification.
 type AuditedModel struct {
 	Inner model.LLM
 	Path  string

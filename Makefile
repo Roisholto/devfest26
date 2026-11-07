@@ -1,22 +1,19 @@
 SHELL := /bin/bash
 export GOTOOLCHAIN := go1.27.3
 
-.PHONY: build setup agent payment temporal preflight test integration check slides
+.PHONY: setup api worker payment temporal preflight test integration check slides
 
-build:
-	mkdir -p bin
-	go build -o bin/agent ./cmd/agent
-	go build -o bin/payment ./cmd/payment
-	go build -o bin/pay ./cmd/pay
+setup:
+	go run ./cmd/payment database-init
+	go run ./cmd/payment migrate
+	go run ./cmd/payment seed
 
-setup: build
-	./bin/payment database-init
-	./bin/payment migrate
-	./bin/payment seed
+# Run each service in its own terminal. Stop with Ctrl-C before running again.
+api:
+	go run ./cmd/api
 
-# Run these in separate terminals. Stop with Ctrl-C before running again.
-agent:
-	go run ./cmd/agent
+worker:
+	go run ./cmd/worker
 
 payment:
 	go run ./cmd/payment
@@ -27,7 +24,7 @@ temporal:
 
 preflight:
 	go run ./cmd/payment preflight
-	go run ./cmd/agent preflight
+	go run ./cmd/worker preflight
 
 test:
 	go test -race ./...
@@ -37,7 +34,7 @@ integration:
 	source scripts/env.sh && TEST_DATABASE_URL="$$PAYMENT_DATABASE_URL" go test -race -count=1 ./internal/payment
 
 # Uses real Gemini, Temporal and PostgreSQL; verifies the supplied solution.
-check: build
+check:
 	source scripts/env.sh && python3 scripts/check-demo.py --solution
 
 slides:

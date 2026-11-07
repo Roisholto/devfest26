@@ -14,7 +14,7 @@ import (
 	"devfest26/internal/httpx"
 )
 
-// StartWorker shares the agent process and Temporal client with its REST API.
+// StartWorker polls the task queue independently of the REST API.
 // The returned function stops polling and releases the ADK Activity resources.
 func StartWorker(c client.Client, cfg config.Config) (func(), error) {
 	factories := map[string]googleadk.ModelFactory{
@@ -47,11 +47,11 @@ func StartWorker(c client.Client, cfg config.Config) (func(), error) {
 	w.RegisterWorkflow(AgentWorkflow)
 	w.RegisterWorkflow(PaymentWorkflow)
 
-	router := &Router{
+	dispatcher := &ToolDispatcher{
 		Client: httpx.NewClient("http://" + cfg.Payment),
 		Limit:  cfg.Limit,
 	}
-	w.RegisterDynamicActivity(router.Execute, activity.DynamicRegisterOptions{})
+	w.RegisterDynamicActivity(dispatcher.Execute, activity.DynamicRegisterOptions{})
 
 	// Internal payment operations are absent from the model's tool catalog.
 	w.RegisterActivity(&PaymentActivities{

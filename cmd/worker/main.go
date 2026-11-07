@@ -1,4 +1,4 @@
-// Command agent runs the REST API and Temporal worker in one process.
+// Command worker polls Temporal and executes agent and payment workflows.
 package main
 
 import (
@@ -16,14 +16,12 @@ import (
 	"google.golang.org/genai"
 
 	"devfest26/internal/agent"
-	"devfest26/internal/api"
 	"devfest26/internal/config"
-	"devfest26/internal/httpx"
 )
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("agent failed", "error", err)
+		slog.Error("worker failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -39,19 +37,19 @@ func run() error {
 		switch os.Args[1] {
 		case "preflight":
 			if len(os.Args) != 2 {
-				return fmt.Errorf("usage: agent preflight")
+				return fmt.Errorf("usage: worker preflight")
 			}
 		case "replay":
 			if len(os.Args) < 3 || len(os.Args) > 4 {
-				return fmt.Errorf("usage: agent replay WORKFLOW_ID [history-output.json]")
+				return fmt.Errorf("usage: worker replay WORKFLOW_ID [history-output.json]")
 			}
 		default:
-			return fmt.Errorf("usage: agent [preflight|replay WORKFLOW_ID [history-output.json]]")
+			return fmt.Errorf("usage: worker [preflight|replay WORKFLOW_ID [history-output.json]]")
 		}
 	}
 
-	if (len(os.Args) == 1 || os.Args[1] != "replay") && os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("GOOGLE_API_KEY") == "" {
-		return fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY is required")
+	if (len(os.Args) == 1 || os.Args[1] != "replay") && os.Getenv("GEMINI_API_KEY") == "" {
+		return fmt.Errorf("GEMINI_API_KEY is required")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -110,7 +108,7 @@ func run() error {
 				}
 			}
 
-			fmt.Printf("AGENT READY model=%s queue=%s\n", cfg.Model, cfg.Queue)
+			fmt.Printf("WORKER READY model=%s queue=%s\n", cfg.Model, cfg.Queue)
 
 			return nil
 		}
@@ -128,13 +126,9 @@ func run() error {
 
 	defer stopWorker()
 
-	server := &api.Server{
-		Temporal: c,
-		Config:   cfg,
-		Payment:  httpx.NewClient("http://" + cfg.Payment),
-	}
+	slog.Info("worker ready", "queue", cfg.Queue, "model", cfg.Model)
 
-	slog.Info("agent ready", "queue", cfg.Queue, "model", cfg.Model)
+	<-ctx.Done()
 
-	return httpx.Serve(ctx, cfg.API, server.Handler())
+	return nil
 }

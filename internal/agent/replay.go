@@ -15,7 +15,8 @@ import (
 )
 
 // Replay fetches a real history and verifies that workflow code recreates the
-// same commands without executing Activities or spending model tokens.
+// same commands without executing Activities or spending model tokens. The tool
+// catalog must match the recorded run, including any completed workshop exercise.
 func Replay(ctx context.Context, c client.Client, id, path string) error {
 	it := c.GetWorkflowHistory(ctx, id, "", false, enums.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	h := &historypb.History{}

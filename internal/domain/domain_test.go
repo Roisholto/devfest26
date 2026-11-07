@@ -4,7 +4,7 @@ import "testing"
 
 func TestAccountNumbersAreExactASCIIStrings(t *testing.T) {
 	for _, n := range []string{"0123454821", "0000000000", "1234567890"} {
-		if err := (AddBeneficiary{
+		if err := (AddBeneficiaryRequest{
 			Name:          "Ayomide",
 			BankCode:      "058",
 			AccountNumber: n,
@@ -14,7 +14,7 @@ func TestAccountNumbersAreExactASCIIStrings(t *testing.T) {
 	}
 
 	for _, n := range []string{"", "123456789", "12345678901", " 0123454821", "0123454821 ", "01234 4821", "01234a4821", "٠١٢٣٤٥٤٨٢١", "０１２３４５４８２１", "0123454821\n"} {
-		if err := (AddBeneficiary{
+		if err := (AddBeneficiaryRequest{
 			Name:          "Ayomide",
 			BankCode:      "058",
 			AccountNumber: n,

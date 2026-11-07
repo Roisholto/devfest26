@@ -16,7 +16,15 @@ description: A Go workshop on validated agent tools, human approval and durable 
 
 From natural-language instructions to confirmed, recoverable payments.
 
-<!-- Speaker notes: 0:00–0:30. All payments are simulated. We extend a supplied working agent rather than building every infrastructure component from scratch. Presenter name and event date intentionally omitted. The visual theme adapts the supplied DevFest 2026 intro deck, especially pages 7, 11 and 12. -->
+---
+<!-- _class: title intro -->
+# Soetan Ayobami
+
+## Software Engineer
+
+[GitHub · @Roisholto](https://github.com/Roisholto)
+
+Today: **Go · AI agents · durable execution**
 
 ---
 # Watch one payment work
@@ -29,8 +37,6 @@ From natural-language instructions to confirmed, recoverable payments.
 
 **What if the payment succeeds, but its response disappears?**
 
-<!-- 0:30–4:00. Opening demo on main in the presenter's own checkout. See docs/presenter.md. Show ask, wait, approve, wait --terminal. Use the actual returned reference. No failure yet. If live infrastructure is unavailable use dist/fallback/opening.png and the saved JSON from scripts/demo.py. -->
-
 ---
 # What you will build and explore
 
@@ -40,18 +46,46 @@ From natural-language instructions to confirmed, recoverable payments.
 - Inspect dynamic tool dispatch and agent recovery.
 - Verify **one debit** after a lost response.
 
-<!-- 4:00–5:00. Establish the learner contract. Authentication is simplified to one fixed local account. Everyone runs the same configuration on their own computer. Search is implemented beforehand. -->
+---
+# Meet Temporal
+
+**A platform for durable execution of application code.**
+
+- **Workflow:** coordinates steps, approval waits and timers.
+- **Activity:** performs external work, including Gemini and tool calls.
+- **Worker:** your Go process that polls and executes that code.
+- **Service:** records Event History and schedules pending work.
+
+A Workflow can outlive the worker process that executes it.
 
 ---
-# Two Go processes. Two workflows.
+# Same agent. Different recovery.
+
+| After the process stops | Ordinary in-memory agent | With Temporal |
+|---|---|---|
+| Conversation and tool results | Lost unless you persist them | Rebuilt from Event History |
+| Proposal and approval wait | Application must recover them | Same Workflow ID and proposal |
+| Completed model/tool calls | May repeat on a fresh run | Recorded completions reused |
+| External mutations | Need idempotency | Still need idempotency |
+
+**Without durable execution:** recovery is application work.
+
+---
+<!-- _class: visual -->
+# Stop the worker. What survives?
+
+![durability-comparison](assets/durable-vs-memory.svg)
+
+<small>Unrecorded completions may retry. Payment effects still need idempotency.</small>
+
+---
+# Three Go processes. Two workflows.
 
 ![architecture](assets/architecture.svg)
 
 **Request → agent workflow → proposal → approval → payment workflow**
 
 Gemini proposes. Go validates and controls. Temporal preserves progress.
-
-<!-- 5:00–7:00. The agent workflow starts before reasoning; the payment child workflow starts only after approval. The simulated payment service owns PostgreSQL. The agent API and worker share one process. The provider is the second Go process. Separate entry points are cmd/agent and cmd/payment; Make invokes their binaries directly. Temporal has its own separate development persistence. No direct database/network I/O in workflow code. -->
 
 ---
 # Validation and confirmation are different
@@ -63,8 +97,6 @@ Gemini proposes. Go validates and controls. Temporal preserves progress.
 | Prepare a payment proposal | |
 
 **Every tool is validated.** Saving a beneficiary does not approve a payment.
-
-<!-- 7:00–8:30. The original add instruction requests a mutation; it does not need another yes/no prompt. Invalid inputs are never executed. A valid saved beneficiary remains saved if a later transfer is rejected. -->
 
 ---
 # Gemini requests. Go executes.
@@ -80,8 +112,6 @@ Gemini proposes. Go validates and controls. Temporal preserves progress.
 
 Tool selection does not authorize payment.
 
-<!-- 8:30–10:00. Inspect the tool catalog and function declaration, not hidden chain of thought. ADK drives the model/tool loop. The model cannot call the internal SubmitTransfer Activity. Prompt instructions help interpretation; runtime checks enforce the boundary. -->
-
 ---
 # Static versus Dynamic Activities
 
@@ -94,13 +124,11 @@ Tool selection does not authorize payment.
 Both use retries, timeouts and recorded results.<br>
 **Calling by name alone is not dynamic registration.**
 
-<!-- 10:00–12:00. Show RegisterDynamicActivity in internal/agent/worker.go. Tool names are not individually registered. Model calls and internal payment Activities are statically registered and are not model-accessible tools. Source: https://docs.temporal.io/develop/go/activities/dynamic-activity -->
-
 ---
 # Dynamic dispatch in Go
 
 ```go
-func (r *Router) Execute(
+func (r *ToolDispatcher) Execute(
     ctx context.Context,
     args converter.EncodedValues,
 ) (any, error) {
@@ -111,19 +139,15 @@ func (r *Router) Execute(
 
 **Name → allowlist → decode → validate → handler**
 
-<!-- 12:00–14:00. This is condensed pseudocode for Execute plus dispatch in internal/agent/tools.go. Unknown names fail non-retryably. Show the actual implementation and strict decoding. The fallback is not unrestricted execution. Catalog ordering is deterministic. -->
-
 ---
 # Durable progress and replay
 
 - **Workflows:** deterministic decisions, timers and approval waits.
 - **Activities:** Gemini calls and external I/O.
-- Recorded results reconstruct progress after an agent restart.
+- Recorded results reconstruct progress after a worker restart.
 - A call without a recorded completion **may run again**.
 
 > Durability reduces repeated calls.<br>Idempotency protects repeated mutations.
-
-<!-- 14:00–17:00. Ordinary in-memory progress disappears on crash. Temporal re-executes workflow code using Event History. Do not promise zero repeated token charges. Completed Activity replay does not re-invoke its model call. Source: https://docs.temporal.io/workflows -->
 
 ---
 # One payment. One financial effect.
@@ -135,23 +159,20 @@ func (r *Router) Execute(
 - A timeout does not prove failure.
 - A known outcome, or explicitly unresolved status.
 
-<!-- 17:00–20:00. Show PaymentWorkflow and Store.Submit briefly. PostgreSQL enforces the financial effect; Temporal preserves the process. A decline is a valid terminal outcome. Avoid claims of guaranteed successful payment, production security or measured scale. -->
-
 ---
 <!-- _class: practice -->
-# Stay on main. Edit one file.
+# Stay on main. Extend one tool.
 
 ```bash
 make setup
 make payment  # its own terminal
-make agent    # another terminal
-# After editing: Ctrl-C, then make agent
+make api      # another terminal
+make worker   # another terminal
+# After editing: Ctrl-C, then make worker
 ```
 
 Existing **listing and search already work**.<br>
 Guide: `docs/beneficiary-exercise.md`
-
-<!-- 20:00–21:00. Setup happens BEFORE the event. Stay on main throughout. Both the declaration and handler are in internal/agent/beneficiary.go. Existing read/payment tools work before the exercise. Restart only the combined agent after editing. The guide supplies a complete replacement file; save progress before copying it. -->
 
 ---
 <!-- _class: practice -->
@@ -159,14 +180,12 @@ Guide: `docs/beneficiary-exercise.md`
 
 > “Add Ayomide at GTBank, account 0123454821.”
 
-1. Add the declaration in `beneficiary.go`.
-2. Implement its typed handler in the same file.
+1. Add the declaration to `Catalog()` in `tools.go`.
+2. Implement `AddBeneficiary` in `beneficiary.go`.
 3. Run the acceptance checks.
 4. Ask the agent, then **search/list to verify**.
 
 **Halfway hint and full code:** `docs/beneficiary-exercise.md`
-
-<!-- 21:00–27:00. Service endpoint, typed client, validation and PostgreSQL storage are supplied. Participants wire the tool, not database infrastructure. At halfway show the hint. No static RegisterActivity call is needed. Observe the dynamic add_beneficiary Activity. The newly added beneficiary is used in the next payment. -->
 
 ---
 <!-- _class: practice -->
@@ -182,20 +201,16 @@ Guide: `docs/beneficiary-exercise.md`
 
 **Dispatcher → service → database constraints**
 
-<!-- 27:00–30:00. Run scripts/exercise-check.py and the direct curl example in the guide. Exactly 10 ASCII digits, no padding/truncation/whitespace repair. Format validation is not real bank verification. Invalid operations make no mutation; previous successful operations remain committed. -->
-
 ---
 <!-- _class: recovery -->
-# Use the beneficiary. Crash the agent.
+# Use the beneficiary. Stop the worker.
 
 1. Prepare a payment to **Ayomide**.
-2. Stop the agent API + worker while approval is pending.
-3. Restart it and retrieve the **same proposal**.
+2. Stop only the worker while approval is pending.
+3. Run `make worker`; retrieve the **same proposal**.
 4. Approve and complete the payment.
 
-Inspect the same workflow/proposal and pre-restart model invocations.
-
-<!-- 30:00–40:00. The presenter has completed the one-file exercise in their own checkout. Use docs/presenter.md or scripts/demo.py. The API is temporarily unavailable during the crash; Temporal and the provider stay up. Snapshot model audit lines before shutdown and after restart BEFORE approving; no pre-existing completed calls may be invoked again. Later operations/narration can legitimately introduce new calls. If infrastructure fails use fallback recording/screenshots, clearly identified as recorded. -->
+The API stays up. Pending work waits in Temporal.<br>Inspect the same proposal and completed model-call counts.
 
 ---
 <!-- _class: recovery -->
@@ -207,8 +222,6 @@ Inspect the same workflow/proposal and pre-restart model invocations.
 4. The existing successful payment is returned.
 
 Inspect **key · reference · balance change · one journal entry**.
-
-<!-- 40:00–46:00. This is an actual connection loss after PostgreSQL commit, not just a pretend error string. Activity retries do not imply exactly-once external execution. The payment service's unique key and transaction protect the debit. Compare evidence before/after this one scenario; previous demos may already have debits. -->
 
 ---
 # Retry according to the operation
@@ -222,20 +235,16 @@ Inspect **key · reference · balance change · one journal entry**.
 
 Retry a failed transfer only with a **new proposal and fresh approval**.
 
-<!-- 46:00–48:00. Demonstrate last transfer lookup briefly. Successful/pending/unknown payments cannot automatically become replacement payments. Explain needs_attention and the explicit status-only reconcile command. Failure examples beyond the core go in the appendix/runbook. -->
-
 ---
 <!-- _class: takeaway -->
 # Follow the evidence
 
 - Duplicate beneficiary addition → **one beneficiary**.
 - Rejected proposal → **no payment submission**.
-- Agent restart → **recorded results reused**.
+- Worker restart → **recorded results reused**.
 - Lost response → **one debit**.
 
 > Gemini proposes. Go validates and controls.<br>Temporal preserves progress. The payment service enforces the financial effect.
-
-<!-- 48:00–50:00. Repeat the README's core message: The LLM should decide what it wants to do; the application decides what it is allowed to do; Temporal coordinates reliable completion. Reliable completion includes definitive failure or explicitly unresolved outcomes, not guaranteed success. -->
 
 ---
 <!-- _class: title -->
@@ -247,9 +256,23 @@ Retry a failed transfer only with a **new proposal and fresh approval**.
 
 Written exercises and solution snippets are in `docs/`.
 
-**Questions · 10 minutes**
+---
+<!-- _class: promotion -->
+# Explore my open-source work
 
-<!-- 50:00–60:00. References in the appendix. Notifications are local simulated receipts, not real messages. Schedules require confirmation of recipient, amount and exact execution time. No production security or benchmark claim. -->
+<div class="promotion-layout">
+<div class="promotion-copy">
+<h2>netlify-load-external-files</h2>
+<p>Load external files during a Netlify build.</p>
+<p><strong>Explore the repo and give it a star.</strong></p>
+<p class="repository-link"><a href="https://github.com/Roisholto/netlify-load-external-files">github.com/Roisholto/<br>netlify-load-external-files</a></p>
+<p class="questions">Questions · 10 minutes</p>
+</div>
+<a class="repository-qr" href="https://github.com/Roisholto/netlify-load-external-files">
+<img src="assets/github-repo-qr.svg" alt="QR code: open Roisholto/netlify-load-external-files on GitHub">
+<span>Scan to open GitHub</span>
+</a>
+</div>
 
 ---
 <!-- _class: appendix -->
@@ -262,8 +285,6 @@ Written exercises and solution snippets are in `docs/`.
 
 [Temporal workflows](https://docs.temporal.io/workflows) · [Cadence origins](https://github.com/temporalio/temporal)
 
-<!-- Optional material. Do not imply the SDK implements application quorum rules or automatic business compensation. -->
-
 ---
 <!-- _class: appendix -->
 # Appendix · APIs, agent SDKs and durability
@@ -273,6 +294,7 @@ Written exercises and solution snippets are in `docs/`.
 - Temporal: durable execution around model calls and operations.
 - This workshop implements **Gemini + ADK in Go**.
 
+[Google ADK documentation](https://adk.dev/) · [Go quickstart](https://adk.dev/get-started/go/)<br>
 [Temporal ADK integration](https://github.com/temporalio/ai-integrations/tree/main/go/googleadk)<br>
 [Official OpenAI agent documentation](https://developers.openai.com/api/docs/guides/agents)
 
@@ -280,11 +302,10 @@ Written exercises and solution snippets are in `docs/`.
 <!-- _class: appendix -->
 # Appendix · Sources and further watching
 
-- [Video 1](https://www.youtube.com/watch?v=k8cnVCMYmNc) · [transcript page](https://ai.engineer/talks/k8cnVCMYmNc)
+- [Cornelia Davis: building durable agents with OpenAI SDK and Temporal](https://www.youtube.com/watch?v=k8cnVCMYmNc)
 - [Tom Wheeler: determinism, replay and durable execution](https://www.youtube.com/watch?v=89WOM-kV7Ws)
-- [Temporal Dynamic Activities — Go](https://docs.temporal.io/develop/go/activities/dynamic-activity)
+- [Google ADK documentation](https://adk.dev/) · [Go quickstart](https://adk.dev/get-started/go/)
+- [Temporal documentation](https://docs.temporal.io/) · [Go SDK guide](https://docs.temporal.io/develop/go)
+- [Workflows and replay](https://docs.temporal.io/workflows) · [Activities](https://docs.temporal.io/activities)
+- [Dynamic Activities in Go](https://docs.temporal.io/develop/go/activities/dynamic-activity)
 - [PostgreSQL locking](https://www.postgresql.org/docs/17/explicit-locking.html)
-
-<small>The first transcript page was inaccessible during preparation. The supplied second-video text is a description. Technical explanations use official documentation.</small>
-
-<!-- User-provided DevFest 2026 Intro Slides PDF is the visual reference, not the workshop content. -->

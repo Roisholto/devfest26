@@ -64,8 +64,17 @@ func (ScriptedModel) GenerateContent(_ context.Context, req *model.LLMRequest, _
 		}
 
 		if m := addRE.FindStringSubmatch(p); m != nil {
-			if len(beneficiaryTools) == 0 {
-				text("Beneficiary creation is the exercise. Complete internal/agent/beneficiary.go first.")
+			addAvailable := false
+
+			for _, spec := range Catalog() {
+				if spec.Name == "add_beneficiary" {
+					addAvailable = true
+					break
+				}
+			}
+
+			if !addAvailable {
+				text("Beneficiary creation is the exercise. Add its Catalog entry in tools.go and complete beneficiary.go first.")
 
 				return
 			}

@@ -1,0 +1,46 @@
+func Catalog() []ToolSpec {
+	return []ToolSpec{
+		{
+			Name:        "list_beneficiaries",
+			Description: "List saved beneficiaries",
+		},
+		{
+			Name:        "search_beneficiaries",
+			Description: "Search beneficiaries by part of a name",
+			Fields:      []string{"query"},
+			Required:    []string{"query"},
+		},
+		{
+			Name:        "find_beneficiary",
+			Description: "Resolve exactly one saved beneficiary by name",
+			Fields:      []string{"name"},
+			Required:    []string{"name"},
+		},
+		{
+			Name:        "check_balance",
+			Description: "Read available balance",
+		},
+		{
+			Name:        "prepare_transfer",
+			Description: "Prepare one proposal. amount_naira is an exact decimal string without commas. retry_of is the reference of a definitively failed payment.",
+			Fields:      []string{"beneficiary_id", "amount_naira", "retry_of"},
+			Required:    []string{"beneficiary_id", "amount_naira"},
+		},
+		{
+			Name:        "get_transaction_status",
+			Description: "Read authoritative status by reference or payment key",
+			Fields:      []string{"reference"},
+			Required:    []string{"reference"},
+		},
+		{
+			Name:        "get_last_transfer",
+			Description: "Retrieve the most recently created transfer",
+		},
+		{
+			Name:        "add_beneficiary",
+			Description: "Save beneficiary details supplied by the user; no extra confirmation required.",
+			Fields:      []string{"name", "bank_code", "account_number"},
+			Required:    []string{"name", "bank_code", "account_number"},
+		},
+	}
+}

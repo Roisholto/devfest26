@@ -11,7 +11,7 @@ import (
 // EnvKeys limits dotenv loading to application configuration, leaving system
 // variables such as HOME, PATH and shell options untouched.
 var EnvKeys = []string{
-	"API_ADDRESS", "DATABASE_URL", "GEMINI_API_KEY", "GEMINI_MODEL", "GOOGLE_API_KEY",
+	"API_ADDRESS", "DATABASE_URL", "GEMINI_API_KEY", "GEMINI_MODEL",
 	"MODEL_AUDIT_PATH", "PAYMENT_ADDRESS", "PAYMENT_DATABASE_URL",
 	"TEMPORAL_ADDRESS", "TRANSFER_LIMIT_KOBO",
 	"TEMPORAL_TASK_QUEUE",
@@ -38,7 +38,7 @@ func ReadDotEnv(path string) (map[string]string, error) {
 	return values, nil
 }
 
-// LoadDotEnv supports direct binary execution as well as the shell launcher.
+// LoadDotEnv supports direct go run execution as well as the shell launcher.
 // Exported process variables take precedence over values in the file.
 func LoadDotEnv(path string) error {
 	values, err := ReadDotEnv(path)

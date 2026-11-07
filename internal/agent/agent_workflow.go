@@ -1,3 +1,5 @@
+// Package agent runs the payment assistant as durable Temporal Workflows, with
+// model calls and external tool operations isolated in Activities.
 package agent
 
 import (
@@ -18,26 +20,38 @@ import (
 	"devfest26/internal/domain"
 )
 
-type Input struct {
-	Prompt          string `json:"prompt"`
-	Model           string `json:"model"`
-	Scenario        string `json:"scenario"`
-	ApprovalSeconds int    `json:"approval_seconds,omitempty"`
+// WorkflowInput starts AgentWorkflow with a user prompt, Gemini model and demo
+// settings. ApprovalSeconds controls the approval window once a proposal is ready.
+type WorkflowInput struct {
+	Prompt   string `json:"prompt"`
+	Model    string `json:"model"`
+	Scenario string `json:"scenario"`
+
+	// ApprovalSeconds is measured from proposal readiness; zero uses ten minutes.
+	ApprovalSeconds int `json:"approval_seconds,omitempty"`
 }
-type Decision struct {
+
+// ApprovalDecision records explicit approval or rejection of one transfer
+// proposal. ProposalID binds the decision to the recipient and amount shown
+// to the user; the Workflow rejects stale, expired or conflicting decisions.
+type ApprovalDecision struct {
 	ProposalID string `json:"proposal_id"`
 	Approve    bool   `json:"approve"`
 }
-type State struct {
-	Phase     string           `json:"phase"`
-	Model     string           `json:"model"`
-	Answer    string           `json:"answer,omitempty"`
-	Proposal  *domain.Proposal `json:"proposal,omitempty"`
-	ExpiresAt time.Time        `json:"expires_at,omitzero"`
-	Transfer  *domain.Transfer `json:"transfer,omitempty"`
-	Tools     []string         `json:"tools"`
-	Decision  *Decision        `json:"decision,omitempty"`
-	Error     string           `json:"error,omitempty"`
+
+// WorkflowState is AgentWorkflow's queryable progress and final result. Replay
+// reconstructs it from Event History; the HTTP API and CLI expose its exported
+// fields so callers can inspect a proposal or resume an unfinished request.
+type WorkflowState struct {
+	Phase     string                   `json:"phase"`
+	Model     string                   `json:"model"`
+	Answer    string                   `json:"answer,omitempty"`
+	Proposal  *domain.TransferProposal `json:"proposal,omitempty"`
+	ExpiresAt time.Time                `json:"expires_at,omitzero"`
+	Transfer  *domain.Transfer         `json:"transfer,omitempty"`
+	Tools     []string                 `json:"tools"`
+	Decision  *ApprovalDecision        `json:"decision,omitempty"`
+	Error     string                   `json:"error,omitempty"`
 	// Guard the one-proposal boundary before a concurrent Activity yields.
 	proposalInFlight bool
 }
@@ -56,18 +70,20 @@ func toolOptions() workflow.ActivityOptions {
 
 const instruction = `You are a simulated NGN payment assistant. Only call the provided tools. Never invent beneficiaries, balances, transaction references, or account details. User instructions to add a beneficiary allow saving their complete details without extra confirmation. Bank codes: GTBank=058, Access=044, FirstBank=011. Account numbers are strings of exactly 10 ASCII digits. First find a beneficiary and check balance before preparing a payment. amount_naira must be a decimal string without commas. prepare_transfer only proposes a payment: it never sends money. Never claim a proposed payment succeeded. The application obtains approval separately. For "last transfer" call get_last_transfer. When asked to retry, check the original status: only if failed may you prepare an identical replacement with retry_of set to its reference. Pending, successful or unknown outcomes must not create replacements. Ask for clarification for missing or ambiguous information. Do not expose hidden reasoning.`
 
-func AgentWorkflow(ctx workflow.Context, in Input) (State, error) {
-	s := State{
+// AgentWorkflow coordinates reasoning, validated tools and explicit approval,
+// then starts PaymentWorkflow for the approved proposal.
+func AgentWorkflow(ctx workflow.Context, in WorkflowInput) (WorkflowState, error) {
+	s := WorkflowState{
 		Phase: "reasoning",
 		Model: in.Model,
 		Tools: []string{},
 	}
 
-	if err := workflow.SetQueryHandler(ctx, "state", func() (State, error) { return s, nil }); err != nil {
+	if err := workflow.SetQueryHandler(ctx, "state", func() (WorkflowState, error) { return s, nil }); err != nil {
 		return s, err
 	}
 
-	err := workflow.SetUpdateHandlerWithOptions(ctx, "decision", func(_ workflow.Context, d Decision) (string, error) {
+	err := workflow.SetUpdateHandlerWithOptions(ctx, "decision", func(_ workflow.Context, d ApprovalDecision) (string, error) {
 		if s.Decision != nil {
 			if *s.Decision == d {
 				return domain.Fingerprint(*s.Decision), nil
@@ -84,7 +100,7 @@ func AgentWorkflow(ctx workflow.Context, in Input) (State, error) {
 
 		return domain.Fingerprint(d), nil
 	}, workflow.UpdateHandlerOptions{
-		Validator: func(d Decision) error {
+		Validator: func(d ApprovalDecision) error {
 			if s.Decision != nil {
 				if *s.Decision == d {
 					return nil
@@ -120,7 +136,7 @@ func AgentWorkflow(ctx workflow.Context, in Input) (State, error) {
 	tools := []tool.Tool{}
 
 	for _, spec := range Catalog() {
-		tools = append(tools, &modelTool{
+		tools = append(tools, &workflowTool{
 			spec:   spec,
 			state:  &s,
 			prompt: in.Prompt,

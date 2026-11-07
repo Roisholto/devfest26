@@ -16,6 +16,9 @@ import (
 
 const DefaultLimitKobo int64 = 10_000_000
 
+// Problem carries a machine-readable failure across tool and HTTP boundaries.
+// Code determines the HTTP error classification and whether an Activity failure
+// is retryable; Message describes the failure to the caller.
 type Problem struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -44,13 +47,19 @@ func NotFound(message string) error {
 	}
 }
 
+// Beneficiary is a saved recipient at one of the simulated banks. AccountNumber
+// preserves all ten account digits, including leading zeros.
 type Beneficiary struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
 	BankCode      string `json:"bank_code"`
 	AccountNumber string `json:"account_number"`
 }
-type AddBeneficiary struct {
+
+// AddBeneficiaryRequest contains the user-supplied details for saving a
+// beneficiary. Validate checks the name, supported bank and ten-digit account
+// before either the tool handler or payment service accepts a mutation.
+type AddBeneficiaryRequest struct {
 	Name          string `json:"name"`
 	BankCode      string `json:"bank_code"`
 	AccountNumber string `json:"account_number"`
@@ -59,7 +68,7 @@ type AddBeneficiary struct {
 var accountRE = regexp.MustCompile(`^[0-9]{10}$`)
 var amountRE = regexp.MustCompile(`^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$`)
 
-func (b AddBeneficiary) Validate() error {
+func (b AddBeneficiaryRequest) Validate() error {
 	if strings.TrimSpace(b.Name) == "" || len(b.Name) > 80 || strings.IndexFunc(b.Name, unicode.IsControl) >= 0 {
 		return Invalid("name must contain 1–80 characters without control characters")
 	}
@@ -173,14 +182,22 @@ func BankName(code string) string {
 	return code
 }
 
-type Proposal struct {
+// TransferProposal fixes the validated recipient, amount, currency and stable
+// payment key presented for human approval. Payment execution requires a
+// separate explicit decision on this proposal's ID.
+type TransferProposal struct {
 	ID          string      `json:"id"`
 	Beneficiary Beneficiary `json:"beneficiary"`
 	AmountKobo  int64       `json:"amount_kobo"`
 	Currency    string      `json:"currency"`
 	PaymentKey  string      `json:"payment_key"`
 }
-type SubmitTransfer struct {
+
+// SubmitTransferRequest is the provider payload for one simulated payment.
+// Key remains stable across submission attempts and reconciliation, allowing
+// the provider to return the existing outcome for repeated identical requests.
+type SubmitTransferRequest struct {
+	// Key identifies the same payment across repeated provider submissions.
 	Key           string `json:"payment_key"`
 	BeneficiaryID string `json:"beneficiary_id"`
 	AmountKobo    int64  `json:"amount_kobo"`
@@ -188,7 +205,7 @@ type SubmitTransfer struct {
 	Scenario      string `json:"scenario"`
 }
 
-func (p SubmitTransfer) Validate(limit int64) error {
+func (p SubmitTransferRequest) Validate(limit int64) error {
 	if err := ValidateKey(p.Key); err != nil {
 		return err
 	}
@@ -209,8 +226,14 @@ func (p SubmitTransfer) Validate(limit int64) error {
 	return Invalid("unknown simulation scenario")
 }
 
+// Transfer carries a simulated payment's identifiers, amount and latest known
+// outcome. Status is pending, succeeded or failed; pending can remain unresolved
+// when the Workflow's reconciliation budget is exhausted.
 type Transfer struct {
-	Key           string    `json:"payment_key"`
+	// Key is the original submission and reconciliation key.
+	Key string `json:"payment_key"`
+
+	// Reference is the provider-assigned transaction identifier, once known.
 	Reference     string    `json:"reference"`
 	BeneficiaryID string    `json:"beneficiary_id"`
 	AmountKobo    int64     `json:"amount_kobo"`

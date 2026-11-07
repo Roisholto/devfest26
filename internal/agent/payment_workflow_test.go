@@ -17,7 +17,7 @@ func TestDeclineNeverRetriesAsSuccess(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(PaymentWorkflow)
 	attempts := 0
-	env.RegisterActivityWithOptions(func(context.Context, domain.SubmitTransfer) (domain.Transfer, error) {
+	env.RegisterActivityWithOptions(func(context.Context, domain.SubmitTransferRequest) (domain.Transfer, error) {
 		attempts++
 
 		return domain.Transfer{
@@ -33,7 +33,7 @@ func TestDeclineNeverRetriesAsSuccess(t *testing.T) {
 	}, activity.RegisterOptions{
 		Name: "ReadTransfer",
 	})
-	env.ExecuteWorkflow(PaymentWorkflow, domain.Proposal{
+	env.ExecuteWorkflow(PaymentWorkflow, domain.TransferProposal{
 		PaymentKey: "stable",
 	}, "decline")
 
@@ -56,7 +56,7 @@ func TestPaymentReconcilesBeforeResubmitting(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(PaymentWorkflow)
 	submissions := 0
-	env.RegisterActivityWithOptions(func(context.Context, domain.SubmitTransfer) (domain.Transfer, error) {
+	env.RegisterActivityWithOptions(func(context.Context, domain.SubmitTransferRequest) (domain.Transfer, error) {
 		submissions++
 
 		return domain.Transfer{}, fmt.Errorf("response lost after commit")
@@ -72,7 +72,7 @@ func TestPaymentReconcilesBeforeResubmitting(t *testing.T) {
 	}, activity.RegisterOptions{
 		Name: "ReadTransfer",
 	})
-	env.ExecuteWorkflow(PaymentWorkflow, domain.Proposal{
+	env.ExecuteWorkflow(PaymentWorkflow, domain.TransferProposal{
 		PaymentKey: "stable",
 		Beneficiary: domain.Beneficiary{
 			ID: "ayo",
@@ -99,7 +99,7 @@ func TestPaymentBoundsReconciliation(t *testing.T) {
 
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(PaymentWorkflow)
-	env.RegisterActivityWithOptions(func(context.Context, domain.SubmitTransfer) (domain.Transfer, error) {
+	env.RegisterActivityWithOptions(func(context.Context, domain.SubmitTransferRequest) (domain.Transfer, error) {
 		return domain.Transfer{}, fmt.Errorf("offline")
 	}, activity.RegisterOptions{
 		Name: "SubmitTransfer",
@@ -109,7 +109,7 @@ func TestPaymentBoundsReconciliation(t *testing.T) {
 	}, activity.RegisterOptions{
 		Name: "ReadTransfer",
 	})
-	env.ExecuteWorkflow(PaymentWorkflow, domain.Proposal{
+	env.ExecuteWorkflow(PaymentWorkflow, domain.TransferProposal{
 		PaymentKey: "stable",
 		Beneficiary: domain.Beneficiary{
 			ID: "ayo",

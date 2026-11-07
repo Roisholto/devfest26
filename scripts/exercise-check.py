@@ -10,7 +10,7 @@ account = "0" + str(uuid.uuid4().int % 1_000_000_000).zfill(9)
 prompt = f"Add {name} at GTBank, account {account}"
 before = evidence()
 saved = wait(ask(prompt))
-assert saved["phase"] == "completed" and "add_beneficiary" in saved["tools"], "Complete both TODOs in internal/agent/beneficiary.go first"
+assert saved["phase"] == "completed" and "add_beneficiary" in saved["tools"], "Add the Catalog entry in internal/agent/tools.go and complete AddBeneficiary in internal/agent/beneficiary.go first"
 again = wait(ask(prompt))
 assert again["phase"] == "completed", again
 matches = request("GET", "/beneficiaries?q=" + name, base=PAYMENT)

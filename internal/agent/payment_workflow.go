@@ -11,7 +11,7 @@ import (
 )
 
 // PaymentWorkflow owns submission and uncertainty; it never calls the model.
-func PaymentWorkflow(ctx workflow.Context, p domain.Proposal, scenario string) (domain.Transfer, error) {
+func PaymentWorkflow(ctx workflow.Context, p domain.TransferProposal, scenario string) (domain.Transfer, error) {
 	if scenario == "" {
 		scenario = "success"
 	}
@@ -24,7 +24,7 @@ func PaymentWorkflow(ctx workflow.Context, p domain.Proposal, scenario string) (
 		},
 	})
 	deadline := workflow.Now(ctx).Add(2 * time.Minute)
-	in := domain.SubmitTransfer{
+	in := domain.SubmitTransferRequest{
 		Key:           p.PaymentKey,
 		BeneficiaryID: p.Beneficiary.ID,
 		AmountKobo:    p.AmountKobo,

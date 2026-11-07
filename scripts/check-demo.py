@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Verify the real two-process demo using an isolated PostgreSQL schema.
+"""Verify the real three-process demo using an isolated PostgreSQL schema.
 
-Run make check to compile the written one-file solution in a temporary
+Run make check to compile the written beneficiary solution in a temporary
 copy and exercise actual Gemini, Temporal and PostgreSQL boundaries.
 Requires the existing PostgreSQL and Temporal services, without resetting data.
 """
@@ -30,8 +30,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--solution", action="store_true", help="compile the supplied exercise solution in isolation")
     options = parser.parse_args()
-    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
-        raise SystemExit("Set GEMINI_API_KEY or GOOGLE_API_KEY in .env first")
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise SystemExit("Set GEMINI_API_KEY in .env first")
     dsn = os.environ["PAYMENT_DATABASE_URL"]
     parsed = urllib.parse.urlsplit(dsn)
     if parsed.scheme not in ("postgres", "postgresql"):
@@ -43,11 +43,11 @@ def main():
     schema = "live_check_" + run_id
     out = Path(".local/verification") / run_id
     out.mkdir(parents=True, mode=0o700)
-    audit = out / "model-invocations.jsonl"
+    audit = (out / "model-invocations.jsonl").resolve()
     original = os.environ.copy()
     root = Path.cwd()
     source_copy = tempfile.TemporaryDirectory(prefix="devfest-solution-", dir=root / ".local") if options.solution else None
-    binaries = {name: root / "bin" / name for name in ("agent", "payment")}
+    workspace = root
     if source_copy:
         workspace = Path(source_copy.name)
         for name in ("go.mod", "go.sum"):
@@ -55,8 +55,13 @@ def main():
         for name in ("cmd", "internal"):
             shutil.copytree(root / name, workspace / name)
         shutil.copy2(root / "docs/solutions/beneficiary.go.txt", workspace / "internal/agent/beneficiary.go")
-        binaries["agent"] = workspace / "agent"
-        subprocess.run(["go", "build", "-o", str(binaries["agent"]), "./cmd/agent"], cwd=workspace, check=True)
+        # Run the exact Catalog function supplied in the exercise guide.
+        tools_path = workspace / "internal/agent/tools.go"
+        tools_source = tools_path.read_text()
+        catalog_start = tools_source.index("func Catalog() []ToolSpec {")
+        catalog_end = tools_source.index("\n}", catalog_start) + 2
+        catalog_solution = (root / "docs/solutions/catalog.go.txt").read_text().rstrip()
+        tools_path.write_text(tools_source[:catalog_start] + catalog_solution + tools_source[catalog_end:])
     # libpq doesn't expand a URI supplied through PGDATABASE. Pass a URI with
     # its password removed as --dbname, keeping the password in the environment.
     db_query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
@@ -86,7 +91,7 @@ def main():
            "MODEL_AUDIT_PATH": str(audit)}
     # demo_client reads these settings at import time.
     os.environ.update(env)
-    from demo_client import ask, wait, decide, evidence, request, PAYMENT
+    from demo_client import ask, wait, evidence, request, PAYMENT
 
     processes = []
     logs = []
@@ -117,14 +122,16 @@ def main():
         return state
 
     def command(service, *args):
-        result = subprocess.run([str(binaries[service]), *args], env=env, capture_output=True, timeout=110)
+        result = subprocess.run(["go", "run", "./cmd/" + service, *args], cwd=workspace, env=env, capture_output=True, timeout=110)
         if result.returncode:
             raise RuntimeError(args[0] + " failed; check configuration/preflight")
 
     def start(service):
         log = (out / (service + ".log")).open("ab", buffering=0)
         logs.append(log)
-        proc = subprocess.Popen([str(binaries[service])], env=env, stdout=log, stderr=subprocess.STDOUT)
+        # The API/provider must operate without any model credential.
+        service_env = env if service == "worker" else {**env, "GEMINI_API_KEY": ""}
+        proc = subprocess.Popen(["go", "run", "./cmd/" + service], cwd=workspace, env=service_env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         processes.append(proc)
         return proc
 
@@ -134,12 +141,28 @@ def main():
         results.append(label)
         print("PASS:", label, flush=True)
 
+    def cli(*args):
+        result = subprocess.run(["go", "run", "./cmd/pay", *args], cwd=workspace,
+                                env=env, capture_output=True, text=True, timeout=170)
+        if result.returncode:
+            raise RuntimeError("CLI command failed: " + args[0])
+        return json.loads(result.stdout)
+
     def invoke(prompt):
-        rid = paced_ask(prompt)
-        state = paced_wait(rid)
-        if state["phase"] in ("completed", "error"):
+        nonlocal next_request
+        delay = next_request - time.monotonic()
+        if delay > 0:
+            print("Waiting %.0fs for the live model quota window" % delay, flush=True)
+            time.sleep(delay)
+        state = cli("ask", prompt)
+        rid = state["request_id"]
+        workflow_ids.append(rid)
+        next_request = time.monotonic() + pause
+        if state.get("phase") in ("completed", "error"):
             histories.append(rid)
-        check("Gemini response: " + prompt, state["model"] == env.get("GEMINI_MODEL", "gemini-3.6-flash") and state["phase"] != "error")
+        check("CLI inline Gemini response: " + prompt,
+              state.get("model") == env.get("GEMINI_MODEL", "gemini-3.6-flash")
+              and state.get("phase") != "error" and not state.get("wait_timed_out"))
         return rid, state
 
     def invocations(rid):
@@ -156,10 +179,11 @@ def main():
         command("payment", "migrate")
         command("payment", "seed")
         command("payment", "preflight")
-        command("agent", "preflight")
+        command("worker", "preflight")
         provider = start("payment")
-        agent = start("agent")
-        deadline = time.monotonic() + 15
+        api = start("api")
+        worker = start("worker")
+        deadline = time.monotonic() + 60
         while True:
             try:
                 request("GET", "/health")
@@ -195,8 +219,8 @@ def main():
 
         rid, proposal = invoke("Send ₦1 to John")
         check("payment pauses for approval", proposal["phase"] == "awaiting_approval" and evidence() == before)
-        decide(rid, proposal, approve=False)
-        rejected = wait(rid, terminal=True)
+        rejected = cli("reject", rid)
+        check("CLI rejection returns its outcome inline", rejected["request_id"] == rid and rejected["decision_status"] == "accepted" and not rejected.get("wait_timed_out"))
         histories.append(rid)
         check("rejected proposal causes no debit", rejected["phase"] == "rejected" and evidence() == before)
 
@@ -207,20 +231,29 @@ def main():
             check(scenario + " pauses before any debit", proposal["phase"] == "awaiting_approval" and evidence() == before)
             calls = invocations(rid)
             if restart:
-                agent.kill()  # Actual process crash: API and worker stop together.
-                agent.wait(timeout=8)
-                check("payment service stays healthy while agent is down", provider.poll() is None and request("GET", "/health", base=PAYMENT)["status"] == "ready")
-                try:
-                    request("GET", "/health")
-                except OSError:
-                    check("agent API is unavailable during the crash", True)
-                else:
-                    raise AssertionError("API should stop with the agent worker")
-                agent = start("agent")
-                recovered = wait(rid, timeout=30)
-                check("agent crash preserves proposal and completed model calls", recovered["proposal"] == proposal["proposal"] and invocations(rid) == calls)
-            decide(rid, proposal)
-            result = wait(rid, terminal=True, timeout=120)
+                # Kill only the worker's own go-run process group, including
+                # its child executable. The API and provider remain running.
+                os.killpg(worker.pid, signal.SIGKILL)
+                worker.wait(timeout=8)
+                check("API stays healthy while worker is down", api.poll() is None and request("GET", "/health")["status"] == "ready")
+                check("payment service stays healthy while worker is down", provider.poll() is None and request("GET", "/health", base=PAYMENT)["status"] == "ready")
+                pending = cli("ask", "--timeout", "1s", "List my beneficiaries")
+                queued = pending["request_id"]
+                workflow_ids.append(queued)
+                check("CLI timeout returns a resumable request while worker is down",
+                      pending.get("wait_timed_out") and pending.get("request_key")
+                      and pending.get("resume_command") == "go run ./cmd/pay wait " + queued)
+                check("API queues a new request without a worker", bool(queued) and not invocations(queued) and evidence() == before)
+                worker = start("worker")
+                recovered = wait(rid, timeout=60)
+                check("worker crash preserves proposal and completed model calls", recovered["proposal"] == proposal["proposal"] and invocations(rid) == calls)
+                queued_result = cli("wait", queued)
+                histories.append(queued)
+                check("queued request executes when worker returns", queued_result["phase"] == "completed" and "list_beneficiaries" in queued_result["tools"])
+            result = cli("approve", rid)
+            check(scenario + " CLI approval returns payment outcome inline",
+                  result["request_id"] == rid and result["decision_status"] == "accepted"
+                  and not result.get("wait_timed_out"))
             after = evidence()
             check(scenario + " produces exactly one ₦1 debit", result["phase"] == "succeeded" and after["debits"] == before["debits"] + 1 and after["balance_kobo"] == before["balance_kobo"] - 100)
             check(scenario + " payment execution makes no additional model calls", invocations(rid) == calls)
@@ -230,8 +263,20 @@ def main():
         _, last = invoke("Check my last transfer and retry it if it failed")
         check("successful last transfer is not replaced", last["phase"] == "completed" and "get_last_transfer" in last["tools"] and evidence() == before)
 
+        # These are the actual independently launched production HTTP servers.
+        api_logs = (out / "api.log").read_text()
+        payment_logs = (out / "payment.log").read_text()
+        check("agent API logs request metadata", "HTTP request method=POST path=/requests status=202" in api_logs)
+        check("payment API logs request metadata", "HTTP request method=GET path=/balance status=200" in payment_logs)
+        check("transfer preparation reads the recipient by ID",
+              any("HTTP request method=GET path=/beneficiaries/" in line
+                  and "status=200" in line for line in payment_logs.splitlines()))
+        check("lost-response log records hijack without an HTTP success",
+              any("HTTP request method=POST path=/transfers status=0" in line
+                  and "hijacked=true" in line for line in payment_logs.splitlines()))
+
         for rid in histories:
-            command("agent", "replay", rid)
+            command("worker", "replay", rid)
         check("all " + str(len(histories)) + " workflow histories replay without model calls", True)
         (out / "result.json").write_text(json.dumps({"model": env.get("GEMINI_MODEL", "gemini-3.6-flash"), "solution": options.solution, "checks": results, "histories": histories}, indent=2))
         passed = True
@@ -250,12 +295,12 @@ def main():
                     pass  # Still stop processes and remove the isolated schema.
         for proc in reversed(processes):
             if proc.poll() is None:
-                proc.terminate()
+                os.killpg(proc.pid, signal.SIGINT)
         for proc in processes:
             try:
                 proc.wait(timeout=8)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
         for log in logs:
             log.close()

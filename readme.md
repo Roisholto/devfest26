@@ -124,7 +124,7 @@ Participants will learn how to:
 5. Add human confirmation before high-impact operations such as transferring money.
 6. Use idempotency to prevent an AI agent from accidentally initiating duplicate payments.
 7. Handle payment-provider timeouts without assuming that a transaction failed.
-8. Use Temporal workflows to make agent-triggered operations durable across crashes and network failures.
+8. Use Temporal workflows to make worker-triggered operations durable across crashes and network failures.
 9. Design retries differently for AI reasoning, internal operations, and external payment APIs.
 10. Preserve an auditable history of what the user requested, what the agent proposed, and what the system actually executed.
 11. Distinguish between agent orchestration and business-process orchestration.
@@ -151,18 +151,29 @@ Basic familiarity with APIs and backend development will be useful. Prior experi
 
 ### Workshop Implementation
 
-The implementation uses **Go 1.27.3**, Google ADK/Gemini, Temporal, and a simulated **Go/PostgreSQL 17** payment service. Participants stay on `main`, edit only `internal/agent/beneficiary.go`, then inspect approval and failure recovery. The agent API and Temporal worker share one Go process; the payment service is the second. They have separate entry points, `cmd/agent` and `cmd/payment`. Listing/search are supplied before the exercise. All model tool calls use native Temporal Dynamic Activities.
+The implementation uses **Go 1.27.3**, Google ADK/Gemini, Temporal, and a simulated **Go/PostgreSQL 17** payment service. Participants stay on `main`, add a spec to `Catalog()` in `internal/agent/tools.go` and implement `AddBeneficiary` in `internal/agent/beneficiary.go`, then inspect approval and failure recovery. The API, Temporal worker and payment service have separate entry points: `cmd/api`, `cmd/worker` and `cmd/payment`. Stop only the worker to demonstrate recovery while the API and provider stay running. Listing/search are supplied before the exercise. All model tool calls use native Temporal Dynamic Activities.
 
 - [Setup and commands](docs/setup.md)
 - [Ten-minute beneficiary exercise and complete code](docs/beneficiary-exercise.md)
-- [Presenter runbook](docs/presenter.md)
 - [Architecture, validation, and REST interfaces](docs/architecture.md)
-- [Marp deck and speaker notes](slides/workshop.md)
+- [Slide deck source](slides/workshop.md)
 - [Written follow-up: payment notifications](docs/practice-notifications.md)
 - [Written follow-up: scheduled transfers](docs/practice-scheduled-transfers.md)
 
 For this fixed-account local demo, authentication infrastructure is omitted. Validation, allowed-tool policy, PostgreSQL idempotency, and explicit payment confirmation remain enforced. Adding a beneficiary needs no additional confirmation. Reliable completion includes definitive failure or explicitly unresolved status; it does not guarantee payment success.
 
-The starter already lists/searches beneficiaries and sends approved payments to seeded recipients. Complete beneficiary creation with the one-file guide or its supplied replacement file. Stop the agent with Ctrl-C and run `make agent` again after editing; there are no checkpoint settings or branch switches.
+The starter already lists/searches beneficiaries and sends approved payments to seeded recipients. Complete beneficiary creation with the guide or its supplied catalog and handler code. Stop the worker with Ctrl-C and run `make worker` again after editing; there are no checkpoint settings or branch switches.
 
-Start the services in separate terminals with `make payment` and `make agent`. Each person uses the same configuration: `DATABASE_URL` and a Gemini key. There are no presenter/participant or live/scripted flags.
+Start the services in separate terminals with `make payment`, `make api` and `make worker`. All demo commands use `go run`; no binary build step is needed. Each person uses the same configuration: `DATABASE_URL` and a Gemini key. There are no presenter/participant or live/scripted flags.
+
+The CLI returns answers in the same command: `go run ./cmd/pay ask 'List my beneficiaries'` waits for the result, and payment requests return their approval proposal. `approve REQUEST_ID` waits for the payment outcome. A `--timeout` deadline returns a resumable request ID; `wait` continues that existing request without starting another Workflow.
+
+### Support my open-source work
+
+Explore **netlify-load-external-files**, a Netlify build plugin for loading external files during builds. Try it and give the repository a star if you find it useful.
+
+**Direct link:** [github.com/Roisholto/netlify-load-external-files](https://github.com/Roisholto/netlify-load-external-files)
+
+<a href="https://github.com/Roisholto/netlify-load-external-files">
+  <img src="slides/assets/github-repo-qr.svg" width="220" height="220" alt="Scan to open Roisholto/netlify-load-external-files on GitHub">
+</a>

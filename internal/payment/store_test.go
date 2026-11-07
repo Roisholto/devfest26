@@ -3,6 +3,7 @@ package payment
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -79,7 +80,7 @@ func testStore(t *testing.T) *Store {
 func TestConcurrentBeneficiaryCreationAndConflict(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
-	in := domain.AddBeneficiary{
+	in := domain.AddBeneficiaryRequest{
 		Name:          "Tolu",
 		BankCode:      "058",
 		AccountNumber: "0123456789",
@@ -139,7 +140,7 @@ func TestConcurrentPaymentIsOneDebit(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	bs, _ := s.List(ctx, "John")
-	in := domain.SubmitTransfer{
+	in := domain.SubmitTransferRequest{
 		Key:           "one-payment",
 		BeneficiaryID: bs[0].ID,
 		AmountKobo:    1000000,
@@ -190,7 +191,7 @@ func TestConcurrentWithdrawalsCannotOverspend(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			_, _, err := s.Submit(ctx, domain.SubmitTransfer{
+			_, _, err := s.Submit(ctx, domain.SubmitTransferRequest{
 				Key:           fmt.Sprintf("withdraw-%d", i),
 				BeneficiaryID: bs[0].ID,
 				AmountKobo:    7000000,
@@ -240,7 +241,7 @@ func TestLostResponseAndDirectHTTPValidation(t *testing.T) {
 	}
 
 	bs, _ := s.List(ctx, "John")
-	in := domain.SubmitTransfer{
+	in := domain.SubmitTransferRequest{
 		Key:           "lost",
 		BeneficiaryID: bs[0].ID,
 		AmountKobo:    1000000,
@@ -284,5 +285,143 @@ func TestDatabaseConstraintAndRollback(t *testing.T) {
 
 	if n != 10000000 {
 		t.Fatal("rollback changed balance")
+	}
+}
+
+func TestBeneficiaryLookupByIDBeyondListLimit(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	for i := range 50 {
+		_, err := s.Add(ctx, fmt.Sprintf("saved-%d", i), domain.AddBeneficiaryRequest{
+			Name:          fmt.Sprintf("Saved %02d", i),
+			BankCode:      "058",
+			AccountNumber: fmt.Sprintf("%010d", i+1),
+		})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	target, err := s.Add(ctx, "last-recipient", domain.AddBeneficiaryRequest{
+		Name:          "Zzz Recipient",
+		BankCode:      "058",
+		AccountNumber: "0123454821",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(Handler(s))
+
+	defer server.Close()
+
+	client := httpx.NewClient(server.URL)
+
+	var listed []domain.Beneficiary
+
+	if err := client.Do(ctx, "GET", "/beneficiaries", "", nil, &listed); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(listed) != 50 {
+		t.Fatalf("expected the capped list, got %d entries", len(listed))
+	}
+
+	for _, beneficiary := range listed {
+		if beneficiary.ID == target.ID {
+			t.Fatal("test recipient must be outside the first page")
+		}
+	}
+
+	var found domain.Beneficiary
+
+	if err := client.Do(ctx, "GET", "/beneficiaries/"+target.ID, "", nil, &found); err != nil {
+		t.Fatal(err)
+	}
+
+	if found != target {
+		t.Fatalf("ID lookup changed recipient details: got %+v, want %+v", found, target)
+	}
+}
+
+func TestProviderLookupsStayWithinDemoAccount(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO accounts(id,balance_kobo) VALUES('other',1000000)`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO beneficiaries(id,account_id,name,bank_code,account_number) VALUES('other-recipient','other','Other','058','0123456789')`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO transfers(payment_key,reference,account_id,beneficiary_id,amount_kobo,currency,status,scenario) VALUES('other-payment','TX-other','other','other-recipient',100,'NGN','failed','decline')`); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(Handler(s))
+
+	defer server.Close()
+
+	client := httpx.NewClient(server.URL)
+
+	for _, path := range []string{"/beneficiaries/missing", "/beneficiaries/other-recipient", "/transfers/other-payment", "/transfers/TX-other"} {
+		response, err := client.HTTP.Get(server.URL + path)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		response.Body.Close()
+
+		if response.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s returned HTTP %d instead of 404", path, response.StatusCode)
+		}
+	}
+}
+
+func TestReceiptRetryCountValidation(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	before, err := s.Evidence(ctx)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(Handler(s))
+
+	defer server.Close()
+
+	client := httpx.NewClient(server.URL)
+
+	for _, value := range []string{"garbage", "1.5", "-1", "3"} {
+		response, err := client.HTTP.Post(server.URL+"/receipts/missing?fail_first="+value, "application/json", nil)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		response.Body.Close()
+
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("fail_first=%s returned HTTP %d instead of 400", value, response.StatusCode)
+		}
+	}
+
+	after, err := s.Evidence(ctx)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for key, value := range before {
+		if after[key] != value {
+			t.Fatalf("invalid retry count changed %s: before=%v after=%v", key, value, after[key])
+		}
 	}
 }

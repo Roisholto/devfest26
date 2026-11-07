@@ -1,4 +1,4 @@
-// Optional presenter utility: capture actual deck/evidence pages, not invented results.
+// Check deck layout/fonts and capture actual local evidence.
 import puppeteer from 'puppeteer-core';
 import { existsSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';

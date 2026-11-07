@@ -1,3 +1,4 @@
+// Package config loads the workshop's environment-based service settings.
 package config
 
 import (
@@ -7,16 +8,36 @@ import (
 	"devfest26/internal/domain"
 )
 
+// Config holds the service addresses, Temporal routing, Gemini settings and
+// transfer limit read by the workshop entry points. Load applies shared defaults
+// so the API and worker use the same task queue and Workflow ID prefix.
 type Config struct {
-	API      string
-	Payment  string
-	DSN      string
+	// API is the loopback host:port on which the agent HTTP API listens.
+	API string
+
+	// Payment is the simulated provider's loopback HTTP host:port.
+	Payment string
+
+	// DSN is the configured PostgreSQL connection URL.
+	DSN string
+
+	// Temporal is the Temporal service's gRPC host:port.
 	Temporal string
-	Queue    string
-	Prefix   string
-	Model    string
-	Audit    string
-	Limit    int64
+
+	// Queue routes Workflow and Activity tasks to the worker.
+	Queue string
+
+	// Prefix namespaces Workflow IDs for this workshop environment.
+	Prefix string
+
+	// Model names the Gemini model used for agent reasoning.
+	Model string
+
+	// Audit is the JSONL file for model invocation identifiers.
+	Audit string
+
+	// Limit is the maximum amount of one transfer, in integer kobo.
+	Limit int64
 }
 
 func env(k, d string) string {

@@ -5,6 +5,9 @@ You are a senior software engineer with experience in the Go ecosystem.
 ## Go Style
 
 - Prefer simple, idiomatic Go over clever abstractions.
+- Name types for their domain role, especially tool arguments, Workflow data and API payloads.
+  Document exported types with their purpose, boundaries and relevant units; avoid comments
+  that only repeat the type name.
 - Format keyed struct literals with one field per line. Never place multiple struct fields on
   the same line, even when the literal is short; the vertical form is easier to scan and review.
 - In handwritten Go, use blank lines generously to separate logical steps inside functions.
@@ -27,3 +30,8 @@ You are a senior software engineer with experience in the Go ecosystem.
 - Use the infrastructure versions already configured for this project and installed for the workshop.
 - Do not change infrastructure versions, Docker image tags (including Alpine runner images),
   volume names, mount paths, or existing databases unless the user explicitly requests it.
+
+## Workshop material
+
+- Do not commit presenter-only documentation, speaker notes, rehearsal records or research notes. Keep them in Git-ignored local files.
+- Keep attendee setup, exercises, solutions and audience-facing slide content in the repository.

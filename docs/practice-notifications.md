@@ -37,7 +37,7 @@ Use the same key for every attempt. The supplied `toolOptions()` bounds retries 
 
 ## Prove it
 
-Stop the agent with Ctrl-C, then run `make agent` again. Save `bin/pay evidence`, approve one payment, wait for its terminal result, and compare evidence:
+Stop the worker with Ctrl-C, then run `make worker` again. Save `go run ./cmd/pay evidence`, approve one payment, wait for its terminal result, and compare evidence:
 
 - `debits` increases by one.
 - `receipt_attempts` increases by three.

@@ -26,15 +26,18 @@ func harness(t *testing.T) (*testsuite.TestWorkflowEnvironment, *int) {
 
 func harnessWithModel(t *testing.T, llm model.LLM) (*testsuite.TestWorkflowEnvironment, *int) {
 	t.Helper()
+	beneficiary := domain.Beneficiary{
+		ID:            "ayo",
+		Name:          "Ayomide",
+		BankCode:      "058",
+		AccountNumber: "0123454821",
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/beneficiaries":
-			httpx.JSON(w, 200, []domain.Beneficiary{{
-				ID:            "ayo",
-				Name:          "Ayomide",
-				BankCode:      "058",
-				AccountNumber: "0123454821",
-			}})
+			httpx.JSON(w, 200, []domain.Beneficiary{beneficiary})
+		case "/beneficiaries/ayo":
+			httpx.JSON(w, 200, beneficiary)
 		case "/balance":
 			httpx.JSON(w, 200, map[string]any{"balance_kobo": 10000000})
 		default:
@@ -57,13 +60,13 @@ func harnessWithModel(t *testing.T, llm model.LLM) (*testsuite.TestWorkflowEnvir
 	}
 
 	acts.Register(env)
-	r := &Router{
+	r := &ToolDispatcher{
 		Client: httpx.NewClient(srv.URL),
 		Limit:  domain.DefaultLimitKobo,
 	}
 	env.RegisterDynamicActivity(r.Execute, activity.DynamicRegisterOptions{})
 	debits := new(int)
-	env.RegisterActivityWithOptions(func(_ context.Context, in domain.SubmitTransfer) (domain.Transfer, error) {
+	env.RegisterActivityWithOptions(func(_ context.Context, in domain.SubmitTransferRequest) (domain.Transfer, error) {
 		*debits++
 
 		return domain.Transfer{
@@ -97,7 +100,7 @@ func TestApprovalRequiredAndRejectionNoDebit(t *testing.T) {
 					return
 				}
 
-				var s State
+				var s WorkflowState
 
 				if err = v.Get(&s); err != nil {
 					t.Error(err)
@@ -115,7 +118,7 @@ func TestApprovalRequiredAndRejectionNoDebit(t *testing.T) {
 					t.Error("debited before approval")
 				}
 
-				d := Decision{
+				d := ApprovalDecision{
 					ProposalID: s.Proposal.ID,
 					Approve:    approve,
 				}
@@ -128,7 +131,7 @@ func TestApprovalRequiredAndRejectionNoDebit(t *testing.T) {
 					},
 				}, d)
 			}, time.Second)
-			env.ExecuteWorkflow(AgentWorkflow, Input{
+			env.ExecuteWorkflow(AgentWorkflow, WorkflowInput{
 				Prompt:   "Send ₦10,000 to Ayomide",
 				Model:    "scripted",
 				Scenario: "success",
@@ -138,7 +141,7 @@ func TestApprovalRequiredAndRejectionNoDebit(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			var out State
+			var out WorkflowState
 
 			if err := env.GetWorkflowResult(&out); err != nil {
 				t.Fatal(err)
@@ -165,12 +168,12 @@ func TestExpiryAndStaleApproval(t *testing.T) {
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow("decision", "bad", &testsuite.TestUpdateCallback{
 			OnReject: func(error) { rejected = true },
-		}, Decision{
+		}, ApprovalDecision{
 			ProposalID: "made-up",
 			Approve:    true,
 		})
 	}, time.Second)
-	env.ExecuteWorkflow(AgentWorkflow, Input{
+	env.ExecuteWorkflow(AgentWorkflow, WorkflowInput{
 		Prompt:          "Send ₦10,000 to Ayomide",
 		Model:           "scripted",
 		ApprovalSeconds: 2,
@@ -180,7 +183,7 @@ func TestExpiryAndStaleApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out State
+	var out WorkflowState
 
 	_ = env.GetWorkflowResult(&out)
 
@@ -208,7 +211,7 @@ func TestNativeDynamicToolValidation(t *testing.T) {
 
 func TestSuccessfulReadToolsNeedNoApproval(t *testing.T) {
 	env, debits := harness(t)
-	env.ExecuteWorkflow(AgentWorkflow, Input{
+	env.ExecuteWorkflow(AgentWorkflow, WorkflowInput{
 		Prompt: "Search beneficiaries for Ayo",
 		Model:  "scripted",
 	})
@@ -217,7 +220,7 @@ func TestSuccessfulReadToolsNeedNoApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out State
+	var out WorkflowState
 
 	_ = env.GetWorkflowResult(&out)
 
@@ -226,6 +229,7 @@ func TestSuccessfulReadToolsNeedNoApproval(t *testing.T) {
 	}
 }
 
+// unavailableModel counts failing model calls to verify the Activity retry limit.
 type unavailableModel struct{ attempts *int }
 
 func (unavailableModel) Name() string { return "unavailable" }
@@ -257,7 +261,7 @@ func TestModelFailureHasBoundedRetries(t *testing.T) {
 	defer acts.Close()
 
 	acts.Register(env)
-	env.ExecuteWorkflow(AgentWorkflow, Input{
+	env.ExecuteWorkflow(AgentWorkflow, WorkflowInput{
 		Prompt: "List my beneficiaries",
 		Model:  "unavailable",
 	})
@@ -266,7 +270,7 @@ func TestModelFailureHasBoundedRetries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out State
+	var out WorkflowState
 
 	if err := env.GetWorkflowResult(&out); err != nil {
 		t.Fatal(err)
@@ -277,11 +281,13 @@ func TestModelFailureHasBoundedRetries(t *testing.T) {
 	}
 }
 
-type parallelReadModel struct{ prepare bool }
+// parallelToolCallModel emits two calls in one turn to exercise concurrent
+// tool waits and, when prepare is set, the single-proposal guard.
+type parallelToolCallModel struct{ prepare bool }
 
-func (parallelReadModel) Name() string { return "parallel-reads" }
+func (parallelToolCallModel) Name() string { return "parallel-tool-calls" }
 
-func (m parallelReadModel) GenerateContent(_ context.Context, req *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
+func (m parallelToolCallModel) GenerateContent(_ context.Context, req *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
 		for _, content := range req.Contents {
 			for _, part := range content.Parts {
@@ -308,18 +314,18 @@ func (m parallelReadModel) GenerateContent(_ context.Context, req *model.LLMRequ
 }
 
 func TestParallelToolCallsUseTheirOwnWorkflowContext(t *testing.T) {
-	env, debits := harnessWithModel(t, parallelReadModel{})
+	env, debits := harnessWithModel(t, parallelToolCallModel{})
 	env.SetTestTimeout(5 * time.Second)
-	env.ExecuteWorkflow(AgentWorkflow, Input{
+	env.ExecuteWorkflow(AgentWorkflow, WorkflowInput{
 		Prompt: "Find Ayomide and check my balance",
-		Model:  "parallel-reads",
+		Model:  "parallel-tool-calls",
 	})
 
 	if err := env.GetWorkflowError(); err != nil {
 		t.Fatal(err)
 	}
 
-	var out State
+	var out WorkflowState
 
 	if err := env.GetWorkflowResult(&out); err != nil {
 		t.Fatal(err)
@@ -331,12 +337,12 @@ func TestParallelToolCallsUseTheirOwnWorkflowContext(t *testing.T) {
 }
 
 func TestConcurrentPrepareCallsCreateOnlyOneProposal(t *testing.T) {
-	env, debits := harnessWithModel(t, parallelReadModel{
+	env, debits := harnessWithModel(t, parallelToolCallModel{
 		prepare: true,
 	})
-	env.ExecuteWorkflow(AgentWorkflow, Input{
+	env.ExecuteWorkflow(AgentWorkflow, WorkflowInput{
 		Prompt:          "Send ₦1 to Ayomide",
-		Model:           "parallel-reads",
+		Model:           "parallel-tool-calls",
 		ApprovalSeconds: 1,
 	})
 
@@ -344,7 +350,7 @@ func TestConcurrentPrepareCallsCreateOnlyOneProposal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out State
+	var out WorkflowState
 
 	if err := env.GetWorkflowResult(&out); err != nil {
 		t.Fatal(err)
