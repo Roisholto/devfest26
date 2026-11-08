@@ -10,7 +10,6 @@ __pycache__/
 # Presenter preparation stays local, including speaker notes extracted from Marp.
 /docs/presenter.md
 /docs/verification.md
-/docs/transcript-notes.md
 /slides/presenter-notes.md
 
 # Original slide template stays local.

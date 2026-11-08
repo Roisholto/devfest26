@@ -27,6 +27,24 @@ From natural-language instructions to confirmed, recoverable payments.
 Today: **Go · AI agents · durable execution**
 
 ---
+<!-- _class: practice -->
+# Get the workshop code
+
+<div class="promotion-layout">
+<div class="promotion-copy">
+<p class="repository-link"><a href="https://github.com/Roisholto/devfest26">github.com/Roisholto/devfest26</a></p>
+<pre><code>git clone https://github.com/Roisholto/devfest26.git
+cd devfest26</code></pre>
+<p>Setup guide: <a href="https://github.com/Roisholto/devfest26/blob/main/docs/setup.md">docs/setup.md</a></p>
+<p>Or choose <strong>Code → Download ZIP</strong> on GitHub.</p>
+</div>
+<a class="repository-qr" href="https://github.com/Roisholto/devfest26">
+<img src="assets/workshop-repo-qr.svg" alt="QR code: open the DevFest workshop repository on GitHub">
+<span>Scan for code and setup</span>
+</a>
+</div>
+
+---
 # Watch one payment work
 
 > “Send ₦10,000 to John.”
